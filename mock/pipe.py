@@ -1,15 +1,10 @@
-import blocks.mock.sdk_ as up
-
+import sdk_ as up
 
 if __name__ == "__main__":
-    a = up.Block(name='a')
-    b = up.Block(name='b')
-
-    pipe = up.Pipe(name='plus-one')
-
-    pipe.add(a)
-    pipe.add(b)
-
+    a = up.Processor('a', path="a.py")
+    b = up.Processor('b', path="b.py")
+    pipe = up.Pipe('plus-one')
+    pipe.add(a).add(b)
     pipe.start()
 
     ##########################################

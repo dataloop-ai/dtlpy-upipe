@@ -1,7 +1,8 @@
 import multiprocessing
-import shared_memory_dict
 import numpy as np
 import asyncio
+import subprocess
+from multiprocessing import shared_memory
 
 
 def rs232_checksum(the_bytes):
@@ -14,12 +15,23 @@ class Message:
 
     def __init__(self, data):
         self.data = data
+        self.data_size = len(self.data)
 
     def write_to_buffer(self, buffer, address):
         buffer[address] = 1
-        buffer[address + self.header_size:len(self.data)] = bytearray(self.data)
+        size_bytes = self.data_size.to_bytes(4, 'big')
+        buffer[address + 1:address + 5] = size_bytes
+        data_start=address + self.header_size
+        data_end = data_start + self.data_size
+        buffer[data_start:data_end] = self.data
         buffer[address] = 2
         return self.size
+
+    @staticmethod
+    def from_buffer(self, buffer, address):
+        size = int.from_bytes(buffer[1], 'big')
+        m = Message(buffer[address + self.header_size:len(self.data)])
+        return m
 
     @property
     def size(self):
@@ -31,54 +43,129 @@ class MessageMemory:
         self.data = data
 
 
-class Processor(multiprocessing.Process):
+class Processor:
     ...
 
     async def waiter(self, event):
         print('waiting for it ...')
         await event.wait()
-        self.on_data(self.get_current_message_data())
+        self.on_data_callback(self.get_current_message_data())
 
-    def __init__(self, name):
-        self.on_data = None
-        self.name -= name
+    def __init__(self, name, path=None):  # name is unique per pipe
+        self.proc = None
+        self.path = path
+        self.on_data_callback = None
+        self.name = name
         self.length = 10
-        self.smd = shared_memory_dict.SharedMemoryDict(name=name, size=1025)
+        self.children = list()
+        self.inQ = Queue('{}_in'.format(self.name), self.on_message)
+        self.outQ = Queue('{}_out'.format(self.name))
+        # self.smd = shared_memory_dict.SharedMemoryDict(name=name, size=1025)
+
+    def add(self, processor):
+        if self.get(processor.name):
+            return
+        print("Adding {}".format(processor.name))
+        self.children.append(processor)
+        return processor
+
+    def get(self, name):
+        proc = next((p for p in self.children if p.name == name), None)
+        return proc
+
+    def start(self):
+        started = []
+        if self.path:
+            started.append(self)
+            self.proc = subprocess.Popen([r'E:\Shabtay\platform\micro-pipelines\venv\Scripts\python.exe', self.path],
+                                         stdout=subprocess.PIPE)
+        for p in self.children:
+            started.extend(p.start())
+        return started
+
+    @property
+    def count(self):
+        me = 0
+        if self.proc:
+            me = 1
+        return me + sum([p.count for p in self.children])
 
     def on_data(self, on_data):
-        self.on_data = on_data
+        self.on_data_callback = on_data
+
+    def on_message(self, msg):
+        if self.on_data_callback:
+            self.on_data_callback(msg.data)
 
     def get_current_message_data(self):
         return 1
 
+    def emit(self, data):
+        self.outQ.put(bytearray(data))
+
 
 class Queue:
-    def __init__(self, name):
+    def __init__(self, name, on_message=None, size=1025):
         self.length = 10
-        self.nextMessageAddress = 0
-        self.smd = shared_memory_dict.SharedMemoryDict(name=name, size=1025)
+        self.name = name
+        self.size = size
+        self.nextAddress = 0
+        self.currentAddress = 0
+        try:
+            self.mem = shared_memory.SharedMemory(name=self.name, create=True, size=self.size)
+        except FileExistsError:
+            self.mem = shared_memory.SharedMemory(name=self.name, size=self.size)
+
+        self.on_message = on_message
 
     def get(self):
         return self.smd.pop(list(np.min(self.smd.keys()))[0])
 
     def put(self, data):
         msg = Message(data)
-        self.nextMessageAddress += msg.write_to_buffer(self.smd, self.nextMessageAddress)
+        self.nextAddress += msg.write_to_buffer(self.mem.buf, self.nextAddress)
+
+    def handle_incoming_message(self):
+        msg = Message.from_buffer(self.mem, self.nextAddress)
+        if self.on_message:
+            self.on_message(msg)
+
+    async def wait_for_message(self):
+        while True:
+            await asyncio.sleep(.1)
+            if self.mem[self.nextMessageAddress] == 2:
+                self.handle_incoming_message()
 
 
 class Block:
     ...
 
 
-class Pipe:
+control_mem_name = "control_mem"
 
-    def __init__(self):
-        self.processors = list()
-        self.main_block = shared_memory_dict.SharedMemoryDict(name='u_pipe_main', size=1025)
 
-    def add(self, processor):
-        self.processors.append(processor)
+class Pipe(Processor):
+
+    def __init__(self, name):
+        Processor.__init__(self, name)
+        self.active = list()
+        # self.main_block = shared_memory_dict.SharedMemoryDict(name=name, size=1025)
+
+    def _init(self):
+        self.control_mem = shared_memory.SharedMemory(name=control_mem_name, create=True, size=1000)
 
     def start(self):
-        for p in self.processors:
-            ...
+
+        self.active = super(Pipe, self).start()
+        print("Started {} processors".format(self.count))
+        asyncio.run(self.wait_for_completion())
+        return self.active
+
+    async def wait_for_completion(self):
+        while True:
+            await asyncio.sleep(.1)
+            for p in self.active:
+                if p.proc:
+                    line = p.proc.stdout.readline()
+                    if (line):
+                        print("{}>>>{}".format(p.name, line))
