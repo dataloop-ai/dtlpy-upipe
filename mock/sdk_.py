@@ -21,7 +21,7 @@ class Message:
         buffer[address] = 1
         size_bytes = self.data_size.to_bytes(4, 'big')
         buffer[address + 1:address + 5] = size_bytes
-        data_start=address + self.header_size
+        data_start = address + self.header_size
         data_end = data_start + self.data_size
         buffer[data_start:data_end] = self.data
         buffer[address] = 2
@@ -83,6 +83,12 @@ class Processor:
             started.extend(p.start())
         return started
 
+    def all_child_procs(self):
+        procs = [self]
+        for p in self.children:
+            procs.extend(p.all_child_procs())
+        return procs
+
     @property
     def count(self):
         me = 0
@@ -130,6 +136,7 @@ class Queue:
         if self.on_message:
             self.on_message(msg)
 
+
     async def wait_for_message(self):
         while True:
             await asyncio.sleep(.1)
@@ -144,18 +151,66 @@ class Block:
 control_mem_name = "control_mem"
 
 
+class MemoryBlock:
+    def __init__(self, block):
+        self.block = block
+
+    def read_u8(self, address):
+        return self.block.buf[address]
+
+    def write_u8(self, address, value):
+        self.block[address] = value
+
+    def write_bytes(self, address, byte_arr):
+        self.block.buf[address:address + len(byte_arr)] = byte_arr
+
+
+class ControlMemory(MemoryBlock):
+    PROC_TABLE_OFFSET = 1000
+    PROC_TABLE_SIZE = 1000
+    PROC_TABLE_ENTRY_SIZE = 100
+    Q_TABLE_OFFSET = PROC_TABLE_OFFSET + PROC_TABLE_SIZE
+    Q_TABLE_ENTRY_SIZE = 100
+    Q_TABLE_SIZE = 1000
+    NEXT_PROC_ID = 1
+
+    def __init__(self):
+        mem = shared_memory.SharedMemory(name=control_mem_name, create=True, size=5000)
+        MemoryBlock.__init__(self, mem)
+
+    def get_available_proc_block_offset(self):
+        for i in range(ControlMemory.PROC_TABLE_OFFSET, ControlMemory.PROC_TABLE_OFFSET + ControlMemory.PROC_TABLE_SIZE,
+                       ControlMemory.PROC_TABLE_ENTRY_SIZE):
+            if not self.read_u8(i):
+                return i
+        return -1
+
+    def register_proc(self, name):
+        proc_block_address=self.get_available_proc_block_offset()
+        if proc_block_address<0:
+            return
+        encoded_name = name.encode()
+        byte_array = bytearray(encoded_name)
+        self.write_bytes(proc_block_address,byte_array)
+
 class Pipe(Processor):
 
     def __init__(self, name):
         Processor.__init__(self, name)
         self.active = list()
+        self._init()
         # self.main_block = shared_memory_dict.SharedMemoryDict(name=name, size=1025)
 
     def _init(self):
-        self.control_mem = shared_memory.SharedMemory(name=control_mem_name, create=True, size=1000)
+        self.control_mem = ControlMemory()
+
+    def _map_pipe(self):
+        all_procs=self.all_child_procs()
+        for p in all_procs:
+            self.control_mem.register_proc(p.name)
 
     def start(self):
-
+        self._map_pipe()
         self.active = super(Pipe, self).start()
         print("Started {} processors".format(self.count))
         asyncio.run(self.wait_for_completion())

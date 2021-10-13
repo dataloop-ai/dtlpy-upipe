@@ -1,4 +1,4 @@
-
+import sdk_ as up
 import time
 
 
@@ -9,6 +9,6 @@ def on_data(data):
 
 if __name__ == "__main__":
     print("Hello b")
-    #proc = up.Processor("b")
-    #proc.on_data(on_data)
-    #proc.start()
+    proc = up.Processor("b")
+    proc.on_data(on_data)
+    proc.start()
