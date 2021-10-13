@@ -1,4 +1,4 @@
-import sdk_ as up
+import mock.sdk as up
 import time
 
 

@@ -1,4 +1,4 @@
-import sdk_ as up
+import mock.sdk as up
 
 if __name__ == "__main__":
     a = up.Processor('a', path="a.py")
