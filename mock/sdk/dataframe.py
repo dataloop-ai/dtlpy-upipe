@@ -12,7 +12,8 @@ class DType(IntEnum):
     U16 = 2
     U32 = 3
     U64 = 4
-    JSON = 5
+    STR = 5
+    JSON = 6
 
 
 class DataFrame:
@@ -24,6 +25,8 @@ class DataFrame:
     def data_to_byte_arr(data, d_type: DType = None):
         if d_type == DType.JSON:
             data_arr = bytearray(bytes(json.dumps(data), encoding='utf-8'))
+        elif d_type == DType.STR:
+            data_arr = bytearray(data.encode('utf-8'))
         else:
             data_arr = data.to_bytes(DataFrame.data_type_size(d_type), "little")
         return data_arr
@@ -53,6 +56,8 @@ class DataFrame:
             data = int.from_bytes(arr, "little")
         if d_type == DType.JSON:
             data = json.load(io.BytesIO(arr))
+        if d_type == DType.STR:
+            data = arr.decode("utf-8")
         return data
 
     @staticmethod
@@ -67,5 +72,6 @@ class DataFrame:
     def size(self):
         if self.d_type == DType.JSON:
             return len(self.byte_arr_data)
-        else:
-            return self.data_type_size(self.d_type)
+        if self.d_type == DType.STR:
+            return len(self.byte_arr_data)
+        return self.data_type_size(self.d_type)
