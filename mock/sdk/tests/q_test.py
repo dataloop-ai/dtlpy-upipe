@@ -48,7 +48,7 @@ async def test_json(count: int = 10):
 
 
 async def test_str(count: int = 10):
-    q = Queue("a", "b", "12", size=4096)
+    q = Queue("a", "b", "12", size=100)
     for i in range(count):
         frame = DataFrame(f"{i}", DType.STR)
         if await q.put(frame):
@@ -87,7 +87,7 @@ async def test_serial(d_type: DType = DType.U8):
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(test_str())
+    loop.run_until_complete(test_str(10**4))
     # loop.run_until_complete(test_json())
     # loop.run_until_complete(test_throughput(10 ** 9))
     # loop.run_until_complete(test_serial(DType.U64))
