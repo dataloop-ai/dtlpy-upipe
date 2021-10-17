@@ -7,6 +7,14 @@ def rs232_checksum(the_bytes):
     return b'%02X' % (sum(the_bytes) & 0xFF)
 
 
+def is_jsonable(x):
+    try:
+        json.dumps(x)
+        return True
+    except (TypeError, OverflowError):
+        return False
+
+
 class DType(IntEnum):
     U8 = 1
     U16 = 2
@@ -17,9 +25,21 @@ class DType(IntEnum):
 
 
 class DataFrame:
-    def __init__(self, data, d_type: DType):
-        self.d_type = d_type
-        self.byte_arr_data = self.data_to_byte_arr(data, d_type)
+    def __init__(self, data, d_type: DType = None):
+        if not d_type:
+            self.d_type = DataFrame.get_data_type(data)
+        else:
+            self.d_type = d_type
+        self.byte_arr_data = self.data_to_byte_arr(data, self.d_type)
+
+    @staticmethod
+    def get_data_type(data):
+        if isinstance(data, int):
+            return DType.U32
+        if isinstance(data, str):
+            return DType.STR
+        if is_jsonable(data):  # always keep last, slower than others
+            return DType.JSON
 
     @staticmethod
     def data_to_byte_arr(data, d_type: DType = None):
@@ -62,7 +82,7 @@ class DataFrame:
 
     @staticmethod
     def from_byte_arr(arr: bytearray, d_type: DType):
-        return DataFrame(DataFrame.data_from_byte_arr(arr, d_type), d_type)
+        return DataFrame(DataFrame.data_from_byte_arr(arr, d_type))
 
     @property
     def data(self):
