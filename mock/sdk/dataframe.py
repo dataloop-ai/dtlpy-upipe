@@ -22,6 +22,7 @@ class DType(IntEnum):
     U64 = 4
     STR = 5
     JSON = 6
+    ARRAY = 7
 
 
 class DataFrame:
@@ -38,6 +39,8 @@ class DataFrame:
             return DType.U32
         if isinstance(data, str):
             return DType.STR
+        if isinstance(data, list):
+            return DType.ARRAY
         if is_jsonable(data):  # always keep last, slower than others
             return DType.JSON
 
@@ -47,6 +50,14 @@ class DataFrame:
             data_arr = bytearray(bytes(json.dumps(data), encoding='utf-8'))
         elif d_type == DType.STR:
             data_arr = bytearray(data.encode('utf-8'))
+        elif d_type == DType.ARRAY:
+            data_arr = bytearray()
+            for datum in data:
+                datum_type = DataFrame.get_data_type(datum)
+                datum_byte_array = DataFrame.data_to_byte_arr(datum, datum_type)
+                datum_size = len(datum_byte_array)
+                datum_header_array = datum_type.to_bytes(1, "little") + datum_size.to_bytes(4, "little")
+                data_arr += datum_header_array + datum_byte_array
         else:
             data_arr = data.to_bytes(DataFrame.data_type_size(d_type), "little")
         return data_arr
@@ -75,9 +86,21 @@ class DataFrame:
         if d_type == DType.U64:
             data = int.from_bytes(arr, "little")
         if d_type == DType.JSON:
-            data = json.load(io.BytesIO(arr))
+            data = json.loads(arr.decode("utf-8"))
         if d_type == DType.STR:
             data = arr.decode("utf-8")
+        if d_type == DType.ARRAY:
+            data = []
+            arr_size = len(arr)
+            current_datum_index = 0
+            while current_datum_index + 5 < arr_size:  # 5 is header size, 1 type, for datum size
+                datum_type = arr[current_datum_index]
+                current_datum_index += 1
+                datum_size = int.from_bytes(arr[current_datum_index:current_datum_index + 4], "little")
+                current_datum_index += 4
+                datum_bytes=arr[current_datum_index:current_datum_index + datum_size]
+                data.append(DataFrame.data_from_byte_arr(datum_bytes,datum_type))
+                current_datum_index += datum_size
         return data
 
     @staticmethod
@@ -90,8 +113,4 @@ class DataFrame:
 
     @property
     def size(self):
-        if self.d_type == DType.JSON:
-            return len(self.byte_arr_data)
-        if self.d_type == DType.STR:
-            return len(self.byte_arr_data)
-        return self.data_type_size(self.d_type)
+        return len(self.byte_arr_data)
