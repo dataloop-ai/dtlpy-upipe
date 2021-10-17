@@ -1,11 +1,12 @@
 import mock.sdk as up
 
 if __name__ == "__main__":
-    a = up.Processor('a', path="a.py")
-    b = up.Processor('b', path="b.py")
+    a = up.Processor('a')
+    b = up.Processor('b')
     pipe = up.Pipe('plus-one')
     pipe.add(a).add(b)
     pipe.start()
+    print("Running")
 
     ##########################################
     #

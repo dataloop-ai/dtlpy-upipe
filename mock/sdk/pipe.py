@@ -1,8 +1,9 @@
 import asyncio
 from multiprocessing import shared_memory
 
-from .message import MemoryBlock
+from .dataframe import MemoryBlock
 from .processor import Processor
+from .mem_queue import Queue
 
 control_mem_name = "control_mem"
 
@@ -17,8 +18,10 @@ class ControlMemory(MemoryBlock):
     NEXT_PROC_ID = 1
 
     def __init__(self):
-        mem = shared_memory.SharedMemory(name=control_mem_name, create=True, size=5000)
-        MemoryBlock.__init__(self, mem)
+        global control_mem_name
+        # mem = shared_memory.SharedMemory(size=5000)
+        # MemoryBlock.__init__(self, mem)
+        pass
 
     def get_available_proc_block_offset(self):
         for i in range(ControlMemory.PROC_TABLE_OFFSET, ControlMemory.PROC_TABLE_OFFSET + ControlMemory.PROC_TABLE_SIZE,
@@ -40,24 +43,48 @@ class Pipe(Processor):
 
     def __init__(self, name):
         Processor.__init__(self, name)
+        self.controller = True
         self.active = list()
         self._init()
+        self.queues = []
         # self.main_block = shared_memory_dict.SharedMemoryDict(name=name, size=1025)
 
     def _init(self):
         self.control_mem = ControlMemory()
 
     def _map_pipe(self):
-        all_procs = self.all_child_procs()
-        for p in all_procs:
-            self.control_mem.register_proc(p.name)
+        self.queues = self.allocate_queues()
+        for q in self.queues:
+            self.node_client.register_queue(q)
+        # for p in all_procs:
+        #     self.control_mem.register_proc(p.name)
+
+    def _prepare(self):
+        self.enum()
+        self.register()
+        self._map_pipe()
+        return self.serve()
 
     def start(self):
-        self._map_pipe()
+        if not self._prepare():
+            raise BrokenPipeError
         self.active = super(Pipe, self).start()
         print("Started {} processors".format(self.count))
-        asyncio.run(self.wait_for_completion())
-        return self.active
+        loop = asyncio.get_event_loop()
+        loop.run_forever()
+
+    def register(self):
+        if self.node_client.register_controller(self.on_ws_message):
+            self.registered = True
+            print("controller registered")
+
+    def serve(self):
+        if self.node_client.serve():
+            print("serving")
+            return True
+        else:
+            print("Error serving")
+            return False
 
     async def wait_for_completion(self):
         while True:
