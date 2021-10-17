@@ -1,42 +1,10 @@
 import asyncio
 from multiprocessing import shared_memory
 
-from .dataframe import MemoryBlock
 from .processor import Processor
 from .mem_queue import Queue
 
 control_mem_name = "control_mem"
-
-
-class ControlMemory(MemoryBlock):
-    PROC_TABLE_OFFSET = 1000
-    PROC_TABLE_SIZE = 1000
-    PROC_TABLE_ENTRY_SIZE = 100
-    Q_TABLE_OFFSET = PROC_TABLE_OFFSET + PROC_TABLE_SIZE
-    Q_TABLE_ENTRY_SIZE = 100
-    Q_TABLE_SIZE = 1000
-    NEXT_PROC_ID = 1
-
-    def __init__(self):
-        global control_mem_name
-        # mem = shared_memory.SharedMemory(size=5000)
-        # MemoryBlock.__init__(self, mem)
-        pass
-
-    def get_available_proc_block_offset(self):
-        for i in range(ControlMemory.PROC_TABLE_OFFSET, ControlMemory.PROC_TABLE_OFFSET + ControlMemory.PROC_TABLE_SIZE,
-                       ControlMemory.PROC_TABLE_ENTRY_SIZE):
-            if not self.read_u8(i):
-                return i
-        return -1
-
-    def register_proc(self, name):
-        proc_block_address = self.get_available_proc_block_offset()
-        if proc_block_address < 0:
-            return
-        encoded_name = name.encode()
-        byte_array = bytearray(encoded_name)
-        self.write_bytes(proc_block_address, byte_array)
 
 
 class Pipe(Processor):

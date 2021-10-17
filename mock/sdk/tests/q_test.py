@@ -11,7 +11,7 @@ async def test_throughput(count: int):
         if i == 65818:
             print("here i am")
         if i % 10000 == 0:
-            print(f"{i/1000}K")
+            print(f"{i / 1000}K")
         if await q.put(frame):
             out: DataFrame = await q.get()
             if not out:
@@ -25,10 +25,32 @@ async def test_throughput(count: int):
             raise IndexError
 
 
-async def test_serial(type: DType = DType.U8):
-    q = Queue("a", "b", "12",size=101)
+async def test_json(count: int = 10):
+    q = Queue("a", "b", "12", size=4096)
+    for i in range(count):
+        frame = DataFrame({"counter": i}, DType.JSON)
+        if await q.put(frame):
+            print(f"{i} write")
+            out: DataFrame = await q.get()
+            if not out:
+                q.print()
+                raise MemoryError
+            if not out.data:
+                q.print()
+                raise ValueError
+            if out.data["counter"] != i:
+                q.print()
+                raise KeyError
+            print(f"{i} read")
+        else:
+            q.print()
+            raise IndexError
+
+
+async def test_serial(d_type: DType = DType.U8):
+    q = Queue("a", "b", "12", size=101)
     for i in range(10):
-        frame = DataFrame(i, type)
+        frame = DataFrame(i, d_type)
         if await q.put(frame):
             print(f"{i} write")
             out: DataFrame = await q.get()
@@ -46,6 +68,7 @@ async def test_serial(type: DType = DType.U8):
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(test_throughput(10**9))
-    #loop.run_until_complete(test_serial(DType.U64))
-    #loop.run_until_complete(test_serial(DType.U8))
+    loop.run_until_complete(test_json())
+    #loop.run_until_complete(test_throughput(10 ** 9))
+    # loop.run_until_complete(test_serial(DType.U64))
+    # loop.run_until_complete(test_serial(DType.U8))
