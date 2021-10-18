@@ -75,7 +75,7 @@ class Queue:
         Queue.next_serial += 1
         return q_id
 
-    def __init__(self, from_p: str, to_p: str, q_id: str, size=4096):
+    def __init__(self, from_p: str, to_p: str, q_id: str, size=1000*4096):
         min_q_size = self.Q_CONTROL_SIZE + self.FRAME_HEADER_SIZE + 1  # send at least 1 byte ...
         if size < min_q_size:
             raise MemoryError(f"Queue size must be at least {min_q_size}")
