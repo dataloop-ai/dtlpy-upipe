@@ -1,7 +1,7 @@
 import io
 from enum import IntEnum
 import json
-
+import numpy as np
 
 def rs232_checksum(the_bytes):
     return b'%02X' % (sum(the_bytes) & 0xFF)
@@ -23,6 +23,10 @@ class DType(IntEnum):
     STR = 5
     JSON = 6
     ARRAY = 7
+    TUPLE = 8
+    ND_ARR = 9
+    CUSTOM = 100 #all ids above this type are user generated, TBD dynamic
+
 
 
 class DataFrame:
@@ -41,6 +45,10 @@ class DataFrame:
             return DType.STR
         if isinstance(data, list):
             return DType.ARRAY
+        if isinstance(data, tuple):
+            return DType.TUPLE
+        if isinstance(data, np.ndarray):
+            return DType.ND_ARR
         if is_jsonable(data):  # always keep last, slower than others
             return DType.JSON
 
@@ -50,6 +58,8 @@ class DataFrame:
             data_arr = bytearray(bytes(json.dumps(data), encoding='utf-8'))
         elif d_type == DType.STR:
             data_arr = bytearray(data.encode('utf-8'))
+        elif d_type == DType.TUPLE:
+            data_arr = bytearray(bytes(json.dumps(data), encoding='utf-8'))
         elif d_type == DType.ARRAY:
             data_arr = bytearray()
             for datum in data:
@@ -58,6 +68,8 @@ class DataFrame:
                 datum_size = len(datum_byte_array)
                 datum_header_array = datum_type.to_bytes(1, "little") + datum_size.to_bytes(4, "little")
                 data_arr += datum_header_array + datum_byte_array
+        elif d_type == DType.ND_ARR:
+            pass
         else:
             data_arr = data.to_bytes(DataFrame.data_type_size(d_type), "little")
         return data_arr
@@ -87,6 +99,8 @@ class DataFrame:
             data = int.from_bytes(arr, "little")
         if d_type == DType.JSON:
             data = json.loads(arr.decode("utf-8"))
+        if d_type == DType.TUPLE:
+            data = tuple(json.loads(arr.decode("utf-8")))
         if d_type == DType.STR:
             data = arr.decode("utf-8")
         if d_type == DType.ARRAY:

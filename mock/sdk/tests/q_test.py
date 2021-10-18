@@ -90,7 +90,7 @@ async def test_arr(count: int = 100):
     for i in range(count):
         frame = DataFrame([i, i + 1, f"{i}", {"i": i}])
         if await q.put(frame):
-            print(f"write" + str([i, i + 1, f"{i}", {"i": i}]))
+            print(f"write array" + str([i, i + 1, f"{i}", {"i": i}]))
             out: DataFrame = await q.get()
             if not out:
                 q.print()
@@ -103,9 +103,27 @@ async def test_arr(count: int = 100):
             q.print()
             raise IndexError
 
+async def test_tuple(count: int = 100):
+    q = Queue("a", "b", "12", size=2341)
+    for i in range(count):
+        frame = DataFrame((i, i + 1, f"{i}", {"i": i}))
+        if await q.put(frame):
+            print(f"write tuple " + str((i, i + 1, f"{i}", {"i": i})))
+            out: DataFrame = await q.get()
+            if not out:
+                q.print()
+                raise MemoryError
+            if out.data[0] != i or out.data[1] != i + 1 or out.data[2] != f"{i}" or out.data[3]["i"] != i:
+                q.print()
+                raise ValueError
+            print(f"{i} read")
+        else:
+            q.print()
+            raise IndexError
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
+    loop.run_until_complete(test_tuple())
     loop.run_until_complete(test_arr())
     loop.run_until_complete(test_json())
     loop.run_until_complete(test_str(10 ** 4))
