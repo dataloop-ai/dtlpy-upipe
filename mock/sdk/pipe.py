@@ -2,7 +2,6 @@ import asyncio
 from multiprocessing import shared_memory
 
 from .processor import Processor
-from .mem_queue import Queue
 
 control_mem_name = "control_mem"
 
@@ -13,12 +12,8 @@ class Pipe(Processor):
         Processor.__init__(self, name)
         self.controller = True
         self.active = list()
-        self._init()
         self.queues = []
         # self.main_block = shared_memory_dict.SharedMemoryDict(name=name, size=1025)
-
-    def _init(self):
-        self.control_mem = ControlMemory()
 
     def _map_pipe(self):
         self.queues = self.allocate_queues()

@@ -69,7 +69,7 @@ class DataFrame:
                 datum_header_array = datum_type.to_bytes(1, "little") + datum_size.to_bytes(4, "little")
                 data_arr += datum_header_array + datum_byte_array
         elif d_type == DType.ND_ARR:
-            pass
+            data_arr = data.tobytes()
         else:
             data_arr = data.to_bytes(DataFrame.data_type_size(d_type), "little")
         return data_arr
