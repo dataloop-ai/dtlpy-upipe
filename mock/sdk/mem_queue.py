@@ -1,3 +1,4 @@
+import binascii
 import os
 import time
 from enum import Enum, IntEnum
@@ -5,6 +6,16 @@ from multiprocessing import shared_memory
 from .dataframe import DataFrame
 from .node_config import node_config
 import asyncio
+
+debug = False
+
+def debug_print(*args):
+    global debug
+    if debug:
+        print(*args)
+
+def current_milli_time():
+    return round((time.time() * 1000) % 60000)
 
 
 class Q_DIRECTION(IntEnum):
@@ -31,7 +42,7 @@ class FrameParser:
         self.frame_status = buffer[self.frame_status_pointer]
         self.frame_d_type = buffer[exe_index + Queue.FRAME_TYPE_OFFSET]
         self.frame_size_pointer = exe_index + Queue.FRAME_SIZE_OFFSET
-        self.frame_size = int.from_bytes(buffer[self.frame_size_pointer:self.frame_size_pointer + 2], "little")
+        self.frame_size = int.from_bytes(buffer[self.frame_size_pointer:self.frame_size_pointer + 4], "little")
         self.frame_data_pointer = exe_index + Queue.FRAME_HEADER_SIZE
         self.frame_data_size = self.frame_size - Queue.FRAME_HEADER_SIZE
         self.frame_data = bytearray(self.frame_data_size)
@@ -52,10 +63,12 @@ class FrameParser:
 class Queue:
     next_serial = 0
     # frame header space
-    FRAME_HEADER_SIZE = 10  # added to every frame
+    FRAME_HEADER_SIZE = 20  # added to every frame
     FRAME_STATUS_OFFSET = 0  # from frame start, size 1
-    FRAME_SIZE_OFFSET = 1  # from frame start, size 2
-    FRAME_TYPE_OFFSET = 3  # from frame start, size 1
+    FRAME_TYPE_OFFSET = 1  # from frame start, size 1
+    FRAME_SIZE_OFFSET = 2  # from frame start, size 4
+    FRAME_WATERMARK_OFFSET = 6  # from frame start, size 8
+    FRAME_CRC32_OFFSET = 14  # from frame start, size 4
     # Q header space
     Q_CONTROL_SIZE = 64
     DATA_START_POINT = Q_CONTROL_SIZE
@@ -68,6 +81,8 @@ class Queue:
     LOCK_TIMEOUT = 0.1
     LOCK_CHECK_INTERVAL = 0.05
     MAX_CAPACITY = 0.90
+    WATER_MARK = bytearray()
+    WATER_MARK.extend(map(ord, "d@tal0op"))
 
     @staticmethod
     def allocate_id():
@@ -75,7 +90,7 @@ class Queue:
         Queue.next_serial += 1
         return q_id
 
-    def __init__(self, from_p: str, to_p: str, q_id: str, size=1000*4096):
+    def __init__(self, from_p: str, to_p: str, q_id: str, size=1000 * 4096):
         min_q_size = self.Q_CONTROL_SIZE + self.FRAME_HEADER_SIZE + 1  # send at least 1 byte ...
         if size < min_q_size:
             raise MemoryError(f"Queue size must be at least {min_q_size}")
@@ -103,6 +118,7 @@ class Queue:
         try:
             await self.acquire_read_lock()
             frame_header = bytearray(self.FRAME_HEADER_SIZE)
+            start_exe_index = self.exe_index
             if self.exe_index + self.FRAME_HEADER_SIZE < self.size:
                 frame_header[:] = self.mem.buf[self.exe_index:self.exe_index + self.FRAME_HEADER_SIZE]
             else:
@@ -112,10 +128,18 @@ class Queue:
                         self.DATA_START_POINT:self.DATA_START_POINT + self.FRAME_HEADER_SIZE - header_space_left]
                 frame_header[:] = part1.tobytes() + part2.tobytes()
             frame_status = frame_header[self.FRAME_STATUS_OFFSET]
+
+            watermark = frame_header[self.FRAME_WATERMARK_OFFSET:self.FRAME_WATERMARK_OFFSET + 8]
+            expected_crc32 = frame_header[self.FRAME_CRC32_OFFSET:self.FRAME_CRC32_OFFSET + 4]
             if frame_status != FRAME_STATUS.CREATED:
                 return None
+            if watermark != self.WATER_MARK:
+                raise BrokenPipeError(f"{current_milli_time()} - Missing watermark on index:{watermark} @ {self.exe_index}")
+
             frame_d_type = frame_header[self.FRAME_TYPE_OFFSET]
-            frame_size = int.from_bytes(frame_header[self.FRAME_SIZE_OFFSET:self.FRAME_SIZE_OFFSET + 2], "little")
+            frame_size = int.from_bytes(frame_header[self.FRAME_SIZE_OFFSET:self.FRAME_SIZE_OFFSET + 4], "little")
+            debug_print(
+                f"Get {current_milli_time()}- Frame size:{frame_size}, free space:{self.free_space}, alloc_index:{self.alloc_index},exe_index:{self.exe_index}")
             if self.exe_index + self.FRAME_HEADER_SIZE >= self.size:
                 frame_data_pointer = self.DATA_START_POINT + (self.exe_index + self.FRAME_HEADER_SIZE) % self.size
             else:
@@ -127,7 +151,7 @@ class Queue:
             else:
                 data_space_left = self.size - frame_data_pointer
                 part1 = self.mem.buf[frame_data_pointer:]
-                part2 = self.mem.buf[self.DATA_START_POINT:self.DATA_START_POINT+frame_data_size - data_space_left]
+                part2 = self.mem.buf[self.DATA_START_POINT:self.DATA_START_POINT + frame_data_size - data_space_left]
                 frame_data[:] = part1.tobytes() + part2.tobytes()
             if self.exe_index + frame_size < self.size:
                 self.mem.buf[self.exe_index:self.exe_index + frame_size] = bytearray(frame_size)
@@ -140,29 +164,46 @@ class Queue:
                 self.exe_index = self.exe_index + frame_size
             else:
                 self.exe_index = self.DATA_START_POINT + (self.exe_index + frame_size) % self.size
+            actual_crc32 = binascii.crc32(frame_data).to_bytes(4, "little")
+            if expected_crc32 != actual_crc32:
+                raise BrokenPipeError(f"Frame CRC32 error at index:{start_exe_index}")
             frame = DataFrame.from_byte_arr(frame_data, frame_d_type)
             self.dequeue_count += 1
             return frame
         finally:
             await self.release_read_lock()
 
+    async def space_available(self, msg: DataFrame):
+        frame_size = msg.size + self.FRAME_HEADER_SIZE
+        if frame_size > self.free_space:
+            return False
+        return True
+
     async def put(self, msg: DataFrame):
-        if (self.size-self.free_space)/self.size > self.MAX_CAPACITY:
+        if (self.size - self.free_space) / self.size > self.MAX_CAPACITY:
             return False
         frame_size = msg.size + self.FRAME_HEADER_SIZE
         if frame_size > self.free_space:
             return False
+        if self.alloc_index == 2765604:
+            pass
+        debug_print(
+            f"Put {current_milli_time()} - Frame size:{frame_size}, free space:{self.free_space}, alloc_index:{self.alloc_index},exe_index:{self.exe_index}")
         try:
             await self.acquire_write_lock()
+            await self.acquire_read_lock()
+            body = msg.byte_arr_data
             header = bytearray(self.FRAME_HEADER_SIZE)
             header[self.FRAME_STATUS_OFFSET] = FRAME_STATUS.CREATED
             header[self.FRAME_TYPE_OFFSET] = msg.d_type
-            header[self.FRAME_SIZE_OFFSET:self.FRAME_SIZE_OFFSET + 2] = frame_size.to_bytes(2, "little")
-            body = msg.byte_arr_data
+            header[self.FRAME_SIZE_OFFSET:self.FRAME_SIZE_OFFSET + 4] = frame_size.to_bytes(4, "little")
+            header[self.FRAME_WATERMARK_OFFSET:self.FRAME_WATERMARK_OFFSET + 8] = self.WATER_MARK
+            header[self.FRAME_CRC32_OFFSET:self.FRAME_CRC32_OFFSET + 4] = binascii.crc32(body).to_bytes(4, "little")
             frame = header + body
             end_of_buffer_space = self.size - self.alloc_index
             frame_address = self.alloc_index
             if frame_size >= end_of_buffer_space:  # split the message, end of buffer reached
+                debug_print("Q wrap")
                 self.mem.buf[frame_address:frame_address + end_of_buffer_space] = frame[0:end_of_buffer_space]
                 size_left = frame_size - end_of_buffer_space
                 self.mem.buf[self.DATA_START_POINT:self.DATA_START_POINT + size_left] = frame[end_of_buffer_space:]
@@ -176,6 +217,7 @@ class Queue:
             return True
         finally:
             await self.release_write_lock()
+            await self.release_read_lock()
 
     def print(self):
         parser = FrameParser(self.mem.buf, self.exe_index)
@@ -199,11 +241,11 @@ class Queue:
 
     def get_frame_size(self, frame_start):
         address = frame_start + self.FRAME_SIZE_OFFSET
-        return int.from_bytes(self.mem.buf[address:address + 2], "little")
+        return int.from_bytes(self.mem.buf[address:address + 4], "little")
 
     def set_frame_size(self, frame_start, size):
         address = frame_start + self.FRAME_SIZE_OFFSET
-        self.mem.buf[address:address + 2] = size.to_bytes(2, "little")
+        self.mem.buf[address:address + 4] = size.to_bytes(4, "little")
 
     async def acquire_read_lock(self):
         await self.acquire_lock(self.R_LOCK_POINTER)

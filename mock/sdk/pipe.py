@@ -1,5 +1,6 @@
 import asyncio
 from multiprocessing import shared_memory
+from typing import Dict
 
 from .processor import Processor
 
@@ -31,10 +32,8 @@ class Pipe(Processor):
     def start(self):
         if not self._prepare():
             raise BrokenPipeError
-        self.active = super(Pipe, self).start()
-        print("Started {} processors".format(self.count))
         loop = asyncio.get_event_loop()
-        loop.run_forever()
+        loop.run_until_complete(self.baby_sitter())
 
     def register(self):
         if self.node_client.register_controller(self.on_ws_message):
@@ -49,7 +48,16 @@ class Pipe(Processor):
             print("Error serving")
             return False
 
-    async def wait_for_completion(self):
+    async def broadcast(self, body: Dict):
+        msg = {"type": "broadcast", "body": body}
+        return await self.node_client.send_message(msg)
+
+    async def baby_sitter(self):
+        print("Running processors in 3 sec")
+        await asyncio.sleep(3)
+        self.active = super(Pipe, self).start()
+        print("Started {} processors".format(self.count))
+        await self.broadcast({"control": "run"})
         while True:
             await asyncio.sleep(.1)
             for p in self.active:

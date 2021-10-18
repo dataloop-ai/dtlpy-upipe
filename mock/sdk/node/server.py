@@ -74,7 +74,7 @@ class ConnectionManager:
 
     async def broadcast(self, message: str):
         for connection in self.active_connections:
-            await connection.send_text(message)
+            await connection.send_json(message)
 
 
 manager = ConnectionManager()
@@ -133,6 +133,8 @@ async def websocket_endpoint(websocket: WebSocket, proc_name: str):
                 msg = json.loads(data)
                 if msg['type'] == 'intra_proc':
                     await manager.send_message(msg['dest'], msg)
+                if msg['type'] == 'broadcast':
+                    await manager.broadcast(msg)
             except:
                 raise ValueError("Un supported processor message")
     except WebSocketDisconnect:

@@ -14,6 +14,8 @@ async def main():
             val += 1
             if val % 10000 == 0:
                 print(f"{val / 1000}K")
+            if val % 100000 == 0:
+                break
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()

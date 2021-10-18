@@ -147,6 +147,7 @@ async def test_nd_array(count: int = 100):
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
+    loop.run_until_complete(test_serial(DType.U8))
     loop.run_until_complete(test_nd_array())
     loop.run_until_complete(test_tuple())
     loop.run_until_complete(test_arr())
@@ -154,4 +155,4 @@ if __name__ == "__main__":
     loop.run_until_complete(test_str(10 ** 4))
     loop.run_until_complete(test_throughput(10 ** 5))
     loop.run_until_complete(test_serial(DType.U64))
-    loop.run_until_complete(test_serial(DType.U8))
+

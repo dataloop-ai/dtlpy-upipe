@@ -1,4 +1,5 @@
 import asyncio
+from enum import IntEnum
 from typing import List, Dict
 
 import websocket
@@ -12,6 +13,12 @@ import os
 from .node import NodeClient
 
 
+class ProcessorExecutionStatus(IntEnum):
+    READY = 1
+    PAUSED = 2
+    RUNNING = 3
+
+
 class Processor:
     ...
     next_serial = 0
@@ -23,7 +30,10 @@ class Processor:
         await event.wait()
         self.on_frame_callback(self.get_current_message_data())
 
-    def __init__(self, name, path=None):  # name is unique per pipe
+    def __init__(self, name=None, path=None):  # name is unique per pipe
+        if not name:
+            name = sys.argv[0]
+            print(f"Warning:Nameless processor started:{name}")
         self.in_qs = []
         self.out_qs = []
         self.serial = None
@@ -40,6 +50,7 @@ class Processor:
         self.exe_name = os.path.basename(os.path.abspath(sys.modules['__main__'].__file__))
         self.proc_id = f"{self.machine_id}:{self.pid}"
         self.node_client = NodeClient(self.name)
+        self.execution_status = ProcessorExecutionStatus.RUNNING
         print(f"Processor up: {self.machine_id}  ->{self.exe_name}  (pid {self.pid})")
         # self.smd = shared_memory_dict.SharedMemoryDict(name=name, size=1025)
 
@@ -58,7 +69,7 @@ class Processor:
         self.out_qs.append(q)
 
     def add(self, processor):
-        if self.get(processor.name):
+        if self.get_child(processor.name):
             return
         print("Adding {}".format(processor.name))
         self.children.append(processor)
@@ -70,7 +81,7 @@ class Processor:
             self.register()
         self.node_client.connect()
 
-    def get(self, name):
+    def get_child(self, name):
         proc = next((p for p in self.children if p.name == name), None)
         return proc
 
@@ -95,8 +106,11 @@ class Processor:
 
     async def monitor(self):
         while True:
-            await self.process_in_q()
-            await asyncio.sleep(1)
+            if self.execution_status == ProcessorExecutionStatus.RUNNING:
+                await self.process_in_q()
+                await asyncio.sleep(.1)
+            else:
+                await asyncio.sleep(.5)
 
     def start(self):
         started = []
@@ -143,6 +157,7 @@ class Processor:
             self.out_qs.append(Queue(q['from_p'], q['to_p'], q['id']))
 
     async def process_in_q(self):
+        return
         if len(self.in_qs) == 0:
             return
         q: Queue = self.in_qs[0]
@@ -153,10 +168,17 @@ class Processor:
             else:
                 break
 
+    def run(self):
+        self.execution_status = ProcessorExecutionStatus.RUNNING
+
     def handle_intra_proc_message(self, msg):
         if msg['type'] == 'q_pending':
             loop = asyncio.get_event_loop()
             loop.create_task(self.process_in_q())
+
+    def handle_intra_proc_message(self, msg):
+        if msg['control'] == 'run':
+            self.run()
 
     def handle_message(self, msg):
         if 'type' not in msg:
@@ -167,6 +189,8 @@ class Processor:
                 self.add_q(q)
         if msg['type'] == "intra_proc":
             self.handle_intra_proc_message(msg['body'])
+        if msg['type'] == "broadcast":
+            self.handle_broadcast_message(msg['body'])
 
     def on_ws_message(self, msg):
         self.handle_message(msg)
@@ -176,12 +200,35 @@ class Processor:
             return 1
         return 1
 
-    async def emit(self, data, d_type: DType):
+    async def emit(self, data, d_type: DType = None):
         msg = DataFrame(data, d_type)
         if len(self.out_qs) == 0:
             raise MemoryError
         added = await self.out_qs[0].put(msg)
         if not added:
             return False
-        await self.send_message(self.out_qs[0].to_p, {"type": "q_pending"})
         return True
+
+    async def emit_sync(self, data, d_type: DType = None):
+        msg = DataFrame(data, d_type)
+        while not await self.out_qs[0].space_available(msg):
+            await asyncio.sleep(.1)
+        added = await self.out_qs[0].put(msg)
+        if not added:
+            return False
+        return True
+
+    async def get(self):
+        q: Queue = self.in_qs[0]
+        frame = await q.get()
+        if frame:
+            return frame.data
+        return None
+
+    async def get_sync(self):
+        q: Queue = self.in_qs[0]
+        while True:
+            frame = await q.get()
+            if frame:
+                return frame.data
+            await asyncio.sleep(.05)

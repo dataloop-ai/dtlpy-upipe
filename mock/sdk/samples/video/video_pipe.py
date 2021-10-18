@@ -1,8 +1,8 @@
 import mock.sdk as up
 
 if __name__ == "__main__":
-    a = up.Processor('a', path='a.py')
-    b = up.Processor('b', path='b.py')
+    a = up.Processor('reader.py')
+    b = up.Processor('display.py')
     pipe = up.Pipe('plus-one')
     pipe.add(a).add(b)
     pipe.start()
