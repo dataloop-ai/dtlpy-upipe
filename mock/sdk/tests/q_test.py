@@ -1,5 +1,7 @@
 import asyncio
 
+import numpy as np
+
 from mock.sdk import DataFrame, DType
 from mock.sdk.mem_queue import Queue
 
@@ -103,6 +105,7 @@ async def test_arr(count: int = 100):
             q.print()
             raise IndexError
 
+
 async def test_tuple(count: int = 100):
     q = Queue("a", "b", "12", size=2341)
     for i in range(count):
@@ -121,12 +124,34 @@ async def test_tuple(count: int = 100):
             q.print()
             raise IndexError
 
+
+async def test_nd_array(count: int = 100):
+    q = Queue("a", "b", "12", size=2341)
+    for i in range(count):
+        arr = np.random.rand(i % 5, i % 30)
+        frame = DataFrame(arr)
+        if await q.put(frame):
+            print(f"write nd_arr " + str((i, i + 1, f"{i}", {"i": i})))
+            out: DataFrame = await q.get()
+            if not out:
+                q.print()
+                raise MemoryError
+            if not np.array_equal(arr, out.data):
+                q.print()
+                raise ValueError
+            print(f"{i} read")
+        else:
+            q.print()
+            raise IndexError
+
+
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(test_tuple())
-    loop.run_until_complete(test_arr())
-    loop.run_until_complete(test_json())
-    loop.run_until_complete(test_str(10 ** 4))
-    # loop.run_until_complete(test_throughput(10 ** 9))
-    loop.run_until_complete(test_serial(DType.U64))
-    loop.run_until_complete(test_serial(DType.U8))
+    loop.run_until_complete(test_nd_array())
+    # loop.run_until_complete(test_tuple())
+    # loop.run_until_complete(test_arr())
+    # loop.run_until_complete(test_json())
+    # loop.run_until_complete(test_str(10 ** 4))
+    # # loop.run_until_complete(test_throughput(10 ** 9))
+    # loop.run_until_complete(test_serial(DType.U64))
+    # loop.run_until_complete(test_serial(DType.U8))
