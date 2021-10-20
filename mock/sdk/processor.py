@@ -55,6 +55,7 @@ class Processor:
         self.execution_status = ProcessorExecutionStatus.RUNNING
         print(f"Processor up: {self.machine_id}  ->{self.exe_name}  (pid {self.pid})")
         self.default_q_size = 1000 * 4096
+        self.consumer_next_q_index = 0
         # self.smd = shared_memory_dict.SharedMemoryDict(name=name, size=1025)
 
     async def register(self):
@@ -209,12 +210,6 @@ class Processor:
         q = self.out_qs[0]
         return q
 
-    def get_next_q_to_process(self):
-        if len(self.in_qs) == 0:
-            raise MemoryError
-        q = self.in_qs[0]
-        return q
-
     async def enqueue(self, q, msg):
         if q.host:
             added = await self.node_client.put_q(q, msg)
@@ -239,20 +234,22 @@ class Processor:
         return await self.emit(data, d_type)
 
     async def get(self):
-        q: Queue = self.in_qs[0]
-        frame = await q.get()
-        if frame:
-            return frame.data
+        for i in range(len(self.in_qs)):
+            next_index = (self.consumer_next_q_index + i) % len(self.in_qs)
+            q: Queue = self.in_qs[next_index]
+            frame = await q.get()
+            if frame:
+                self.consumer_next_q_index += 1
+                return frame.data
         return None
 
     async def get_sync(self, timeout: int = 5):
-        q: Queue = self.in_qs[0]
         start_time = time.time()
         sleep_time = 0.01
         while True:
-            frame = await q.get()
-            if frame:
-                return frame.data
+            data = await self.get()
+            if data:
+                return data
             elapsed = time.time() - start_time
             if elapsed > timeout:
                 raise TimeoutError(f"get_sync timeout {elapsed} sec")

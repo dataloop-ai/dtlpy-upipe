@@ -16,7 +16,6 @@ async def main():
     proc.start()
     logger.info("b started")
     first = True
-    q: Queue = proc.get_next_q_to_process()
     while True:
         try:
             counter = await proc.get_sync()
