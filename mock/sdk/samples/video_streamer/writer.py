@@ -7,7 +7,9 @@ from mock.sdk import DataFrame
 
 
 def on_frame(frame: DataFrame):
-    cv2.imshow("result", frame)
+    if frame.data is None:
+        return
+    cv2.imshow("result", frame.data)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         return
 

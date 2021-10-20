@@ -5,6 +5,7 @@ from typing import Dict
 
 import aiohttp
 import websockets
+import websockets.exceptions
 import time
 import httpx
 from aiohttp import FormData, ClientSession

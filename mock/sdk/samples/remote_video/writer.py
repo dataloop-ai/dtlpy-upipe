@@ -1,36 +1,37 @@
 import logging
 import asyncio
 import sys
+import time
 
 import mock.sdk as up
 from mock.sdk import Queue
 
 logging.basicConfig(level=logging.DEBUG, format='%(process)d - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("writer")
 
 
 async def main():
-    logger.info("Hello b")
-    proc = up.Processor("b")
+    logger.info("Hello writer")
+    proc = up.Processor("writer")
     await proc.connect()
     proc.start()
-    logger.info("b started")
+    logger.info("writer started")
     first = True
-    q: Queue = proc.get_next_q_to_process()
+    counter = 0
+    tic = time.time()
     while True:
+        counter += 1
         try:
-            counter = await proc.get_sync()
-            if counter + 1 != q.exe_counter:
-                raise IndexError("Q counter mismatch ")
+            frame = await proc.get_sync()
             if first:
                 first = False
-                logger.info("b got first message")
+                logger.info("writer got first message")
                 sys.stdout.flush()
         except TimeoutError:
             logger.info("timeout")
             break
         if counter % 1000 == 0:
-            logger.info(f"{float(counter / 1000)}K")
+            logger.info(f"got shape {frame.shape}, rate: {counter / (time.time() -tic)}")
 
 
 if __name__ == "__main__":
