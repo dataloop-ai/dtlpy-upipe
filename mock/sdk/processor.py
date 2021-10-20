@@ -215,9 +215,7 @@ class Processor:
         q = self.in_qs[0]
         return q
 
-    async def emit(self, data, d_type: DType = None):
-        msg = DataFrame(data, d_type)
-        q = self.get_next_q_to_emit()
+    async def enqueue(self, q, msg):
         if q.host:
             added = await self.node_client.put_q(q, msg)
         else:
@@ -226,14 +224,19 @@ class Processor:
             return False
         return True
 
+    async def emit(self, data, d_type: DType = None):
+        msg = DataFrame(data, d_type)
+        q = self.get_next_q_to_emit()
+        success = True
+        for q in self.out_qs:
+            success = success and await self.enqueue(q, msg)
+        return success
+
     async def emit_sync(self, data, d_type: DType = None):
         msg = DataFrame(data, d_type)
         while not await self.out_qs[0].space_available(msg):
             await asyncio.sleep(.1)
-        added = await self.out_qs[0].put(msg)
-        if not added:
-            return False
-        return True
+        return await self.emit(data, d_type)
 
     async def get(self):
         q: Queue = self.in_qs[0]
