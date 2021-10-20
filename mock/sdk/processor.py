@@ -1,10 +1,13 @@
 import asyncio
+import inspect
 import time
 from enum import IntEnum
 from typing import List, Dict
 
+import psutil
 import websocket
 
+from . import API_Proc
 from .dataframe import DType, DataFrame
 from .mem_queue import Queue
 import sys
@@ -59,8 +62,11 @@ class Processor:
         # self.smd = shared_memory_dict.SharedMemoryDict(name=name, size=1025)
 
     async def register(self):
-        messages = await self.node_client.register(self.on_ws_message)
-        if messages:
+        response_data = await self.node_client.register(self.api_def, self.on_ws_message)
+        if not response_data:
+            return self.registered
+        if 'messages' in response_data:
+            messages = response_data['messages']
             self.registered = True
             for m in messages:
                 self.handle_message(m)
@@ -108,13 +114,20 @@ class Processor:
             allocated.extend(p.allocate_queues())
         return allocated
 
+    async def report_hw_metrics(self):
+        pid = os.getpid()
+        python_process = psutil.Process(pid)
+        pass
+
     async def monitor(self):
         while True:
-            if self.execution_status == ProcessorExecutionStatus.RUNNING:
-                await self.process_in_q()
-                await asyncio.sleep(.1)
-            else:
-                await asyncio.sleep(.5)
+            # if self.execution_status == ProcessorExecutionStatus.RUNNING:
+            #     await self.process_in_q()
+            #     await asyncio.sleep(.1)
+            # else:
+            #     await asyncio.sleep(.5)
+            await asyncio.sleep(1)
+            await self.report_hw_metrics()
 
     def start(self):
         started = []
@@ -161,24 +174,25 @@ class Processor:
         if q["from_p"] == self.name and not self.get_q(q['q_id'], False):
             self.out_qs.append(Queue(q['from_p'], q['to_p'], q['q_id'], int(q['size']), q['host']))
 
-    async def process_in_q(self):
-        if len(self.in_qs) == 0:
-            return
-        q: Queue = self.in_qs[0]
-        while True:
-            frame = await q.get()
-            if frame and self.on_frame_callback:
-                self.on_frame_callback(frame)
-            else:
-                break
+    # async def process_in_q(self):
+    #     if len(self.in_qs) == 0:
+    #         return
+    #     q: Queue = self.in_qs[0]
+    #     while True:
+    #         frame = await q.get()
+    #         if frame and self.on_frame_callback:
+    #             self.on_frame_callback(frame)
+    #         else:
+    #             break
 
     def run(self):
         self.execution_status = ProcessorExecutionStatus.RUNNING
 
     def handle_intra_proc_message(self, msg):
         if msg['type'] == 'q_pending':
-            loop = asyncio.get_event_loop()
-            loop.create_task(self.process_in_q())
+            pass
+            # loop = asyncio.get_event_loop()
+            # loop.create_task(self.process_in_q())
 
     def handle_intra_proc_message(self, msg):
         if msg['control'] == 'run':
@@ -254,3 +268,11 @@ class Processor:
             if elapsed > timeout:
                 raise TimeoutError(f"get_sync timeout {elapsed} sec")
             await asyncio.sleep(sleep_time)
+
+    @property
+    def executable(self):
+        return sys.argv[0]
+
+    @property
+    def api_def(self):
+        return API_Proc(name=self.name, path=self.executable, pid=self.pid, controller=self.controller)

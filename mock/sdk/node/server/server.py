@@ -1,6 +1,9 @@
+import asyncio
 import json
 import pickle
 from typing import List, Dict
+
+import psutil
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, Form, File
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -10,7 +13,8 @@ import uvicorn
 from starlette import status
 from starlette.requests import Request
 
-from mock.sdk.types import API_Queue
+from mock.sdk import HW_Usage
+from mock.sdk.types import API_Queue, API_Response, API_Proc
 from mock.sdk.mem_queue import Queue
 
 
@@ -27,15 +31,74 @@ class NodeServer:
         return NodeServer._instance
 
 
-class ConnectionManager:
+class ProcessManager:
+    USAGE_HISTORY_LIMIT = 100
+
     def __init__(self):
-        self.active_connections: Dict[str, WebSocket] = {}
+        self.proc_connections: Dict[str, WebSocket] = {}
         self.queues_defs: Dict[str, List[API_Queue]] = {}
         self.queues: List[Queue] = [None] * 50  # max Queues
         self.ready = False
+        self.usage_history: List[HW_Usage] = []
 
     async def serve(self):
         self.ready = True
+
+    async def report_hw_metrics(self):
+        cpu = psutil.cpu_percent()
+        memory = psutil.virtual_memory().percent
+        usage = HW_Usage(cpu=cpu, memory=memory)
+        self.usage_history.append(usage)
+        if len(self.usage_history) > self.USAGE_HISTORY_LIMIT:
+            del self.usage_history[0]
+
+    async def auto_scale_required(self):
+        cpu = 0
+        memory = 0
+        for u in self.usage_history:
+            cpu += u.cpu
+            memory += u.memory
+        cpu /= len(self.usage_history)
+        memory /= len(self.usage_history)
+        if cpu < 75:
+            return True
+        return False
+
+    def get_most_busy_q(self):
+        max_pending = None
+        max_q = None
+        for q in self.queues:
+            if not q:
+                continue
+            if max_pending is None:
+                max_pending = q.pending_counter
+                continue
+            if q.pending_counter > max_pending:
+                max_pending = q.pending_counter
+                max_q = q
+        return max_q
+
+    async def auto_scale(self):
+        q_to_scale = self.get_most_busy_q()
+        if not q_to_scale:
+            return
+        proc_to_scale = q_to_scale.to_p
+        if proc_to_scale not in self.proc_connections:
+            return
+        proc_connection = self.proc_connections[proc_to_scale]
+        proc_connection.send_json()
+
+    async def monitor(self):
+        while True:
+            # if self.execution_status == ProcessorExecutionStatus.RUNNING:
+            #     await self.process_in_q()
+            #     await asyncio.sleep(.1)
+            # else:
+            #     await asyncio.sleep(.5)
+            await asyncio.sleep(1)
+            await self.report_hw_metrics()
+            if await self.auto_scale_required():
+                await self.auto_scale()
 
     def get_queue_def(self, proc_name: str):
         q_json = {"type": "q_update", "queues": []}
@@ -47,15 +110,15 @@ class ConnectionManager:
 
     async def connect(self, proc_name: str, websocket: WebSocket):
         await websocket.accept()
-        self.active_connections[proc_name] = websocket
+        self.proc_connections[proc_name] = websocket
 
     def disconnect(self, proc_name: str, websocket: WebSocket):
-        del self.active_connections[proc_name]
+        del self.proc_connections[proc_name]
 
     async def register(self, proc_name: str):
         global controller_proc_name
-        if controller_proc_name in self.active_connections:
-            await self.active_connections[controller_proc_name].send_json({"type": "register", "proc_name": proc_name})
+        if controller_proc_name in self.proc_connections:
+            await self.proc_connections[controller_proc_name].send_json({"type": "register", "proc_name": proc_name})
         q_defs = self.get_queue_def(proc_name)
         await self.send_message(proc_name, q_defs)
 
@@ -78,18 +141,20 @@ class ConnectionManager:
         await self.send_message(proc_name, q_defs)
 
     async def send_message(self, proc_name: str, message: Dict):
-        if proc_name not in self.active_connections:
+        if proc_name not in self.proc_connections:
             return
-        await self.active_connections[proc_name].send_json(message)
+        await self.proc_connections[proc_name].send_json(message)
 
     async def broadcast(self, message: str):
-        for connection in self.active_connections:
+        for connection in self.proc_connections:
             await connection.send_json(message)
 
 
-manager = ConnectionManager()
+manager = ProcessManager()
 fast_api = FastAPI()
 controller_proc_name: str = None
+loop = asyncio.get_event_loop()
+loop.create_task(manager.monitor())
 
 
 @fast_api.get("/")
@@ -105,13 +170,21 @@ async def serve():
     return JSONResponse(content={"Success": True})
 
 
-@fast_api.get("/register/{proc_name}")
-async def register(proc_name: str):
+@fast_api.post("/register")
+async def register(proc: API_Proc):
+    global controller_proc_name
+    if proc.controller:
+        controller_proc_name = proc.name
+        await manager.register(proc.name)
+        return API_Response(success=True)
     if not manager.ready:
-        return JSONResponse(content={"Success": False, "error": {"code": "NOT_READY", "message": "Server not ready"}})
-    await manager.register(proc_name)
-    q_defs = manager.get_queue_def(proc_name)
-    return JSONResponse(content={"Success": True, "messages": [q_defs]})
+        return API_Response(success=False, code="NOT_READY", message="Server not ready")
+    await manager.register(proc.name)
+    response = API_Response(success=True)
+    q_defs = manager.get_queue_def(proc.name)
+    if q_defs:
+        response.data = {"messages": [q_defs]}
+    return response
 
 
 @fast_api.post("/register_q")
@@ -128,13 +201,6 @@ async def push_q(q: str = Form(...), frame_file: UploadFile = Form(...)):
     frame = pickle.loads(contents)
     added = await manager.put_in_q(q, frame)
     return {"Success": added}
-
-
-@fast_api.get("/register_controller/{proc_name}")
-def register_controller(proc_name: str):
-    global controller_proc_name
-    controller_proc_name = proc_name
-    return {"Success": True, "messages": []}
 
 
 @fast_api.on_event("startup")

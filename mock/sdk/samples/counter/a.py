@@ -7,7 +7,7 @@ from mock.sdk import Queue
 async def main():
     print("Hello a")
     me = up.Processor("a")
-    me.connect()
+    await me.connect()
     print("a connected")
     val = 1
     q: Queue = me.get_next_q_to_emit()
@@ -15,7 +15,6 @@ async def main():
         if await me.emit(val, up.DType.U32):
             val += 1
             if val % 10000 == 0:
-                print(f"{val / 1000}K")
                 print(f"{val / 1000}K")
             if val % 100000 == 0:
                 break

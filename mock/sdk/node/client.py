@@ -10,14 +10,53 @@ import time
 import httpx
 from aiohttp import FormData, ClientSession
 
+from mock.sdk import API_Proc, API_Response
+
 counter = 0
 
 host = 'localhost:852'
 
 
+def retry(times: int, exceptions=()):
+    """
+    Retry Decorator
+    Retries the wrapped function/method `times` times if the exceptions listed
+    in ``exceptions`` are thrown
+    :param exceptions: Tuple of Exceptions
+    :param times: The number of times to repeat the wrapped function/method
+    :type times: Int
+    :param Exceptions: Lists of exceptions that trigger a retry attempt
+    """
+
+    def decorator(func):
+        async def newfn(*args, **kwargs):
+            attempt = 0
+            while attempt < times:
+                try:
+                    res = await func(*args, **kwargs)
+                    content = API_Response(**await res.json())
+                    if content.success:
+                        return content.data
+                    else:
+                        raise AssertionError(f"Error on {func} : {content.message}")
+                except exceptions:
+                    print(
+                        'Exception thrown when attempting to run %s, attempt '
+                        '%d of %d' % (func, attempt, times)
+                    )
+                attempt += 1
+                await asyncio.sleep(1)
+            raise TimeoutError(f"Error on server access {func}")
+
+        return newfn
+
+    return decorator
+
+
 class NodeClient:
     socket: websockets.WebSocketClientProtocol
     sessions: Dict[str, ClientSession] = {}
+    _server_session: ClientSession = None
 
     def __init__(self, proc_name):
         self.register_timeout = 5
@@ -27,42 +66,10 @@ class NodeClient:
         self.connected = False
         self.keep_alive = False
 
-    async def register(self, message_handler):
-        messages = await self._request_register()
-        if messages:
-            self.message_handler = message_handler
-        return messages
-
-    async def register_controller(self, message_handler):
-        res = await self._request_register(True)
-        if res:
-            self.message_handler = message_handler
-        return res
-
-    async def _request_register(self, controller=False):
-        register_path = 'register'
-        if controller:
-            register_path = 'register_controller'
-        register_url = f"http://{host}/{register_path}/{self.proc_name}"
-        print(register_url)
-        registered = False
-        timer = 0
-        while not registered:
-            try:
-                r = httpx.get(register_url)
-                if r.status_code == 200:
-                    res = r.json()
-                    if res['Success']:
-                        return res['messages']
-                time.sleep(1)
-                timer += 1
-                if timer > self.register_timeout:
-                    break
-            except httpx.TimeoutException:
-                print(f"register timeout for {self.proc_name}")
-        if not registered:
-            raise TimeoutError("Register timeout")
-        return False
+    @retry(times=3)
+    async def register(self, proc: API_Proc, message_handler):
+        register_url = f"http://{host}/register"
+        return await self.server_session.post(register_url, json=proc.dict())
 
     async def serve(self, ):
         serve_url = f"http://{host}/serve"
@@ -137,6 +144,12 @@ class NodeClient:
         if not res or "Success" not in res:
             return False
         return res["Success"]
+
+    @property
+    def server_session(self):
+        if not self._server_session:
+            self._server_session = aiohttp.ClientSession()
+        return self._server_session
 
     @property
     def ws_url(self):

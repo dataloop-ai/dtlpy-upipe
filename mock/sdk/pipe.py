@@ -35,11 +35,6 @@ class Pipe(Processor):
         loop = asyncio.get_event_loop()
         loop.create_task(self.baby_sitter())
 
-    async def register(self):
-        if await self.node_client.register_controller(self.on_ws_message):
-            self.registered = True
-            print("controller registered")
-
     async def serve(self):
         if await self.node_client.serve():
             print("serving")
