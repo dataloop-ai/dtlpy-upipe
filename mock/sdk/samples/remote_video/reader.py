@@ -14,16 +14,13 @@ async def main():
     await me.connect()
     logger.info("reader starter")
 
-    q: Queue = me.get_next_q_to_emit()
-
-    frame = np.random.randint(0, 255, (256, 256), dtype='uint8')
+    frame = np.random.randint(0, 255, (1000, 1000), dtype='uint8')
     counter = 0
     while True:
         if await me.emit(frame, up.DType.ND_ARR):
             counter += 1
             if counter % 10000 == 0:
                 logger.info(f"{counter / 1000}K")
-                logger.info(q.status_str)
             if counter % 100000 == 0:
                 break
 
