@@ -3,16 +3,20 @@ import os
 import time
 from enum import Enum, IntEnum
 from multiprocessing import shared_memory
+
+from . import API_Queue
 from .dataframe import DataFrame
 from .node_config import node_config
 import asyncio
 
 debug = False
 
+
 def debug_print(*args):
     global debug
     if debug:
         print(*args)
+
 
 def current_milli_time():
     return round((time.time() * 1000) % 60000)
@@ -69,6 +73,7 @@ class Queue:
     FRAME_SIZE_OFFSET = 2  # from frame start, size 4
     FRAME_WATERMARK_OFFSET = 6  # from frame start, size 8
     FRAME_CRC32_OFFSET = 14  # from frame start, size 4
+    # end of frame header space
     # Q header space
     Q_CONTROL_SIZE = 64
     DATA_START_POINT = Q_CONTROL_SIZE
@@ -78,7 +83,10 @@ class Queue:
     DIRECTION_POINTER = 15  # size = 1
     ALLOC_POINTER = 16  # size = 4
     EXE_POINTER = 20  # size = 4
-    LOCK_TIMEOUT = 0.1
+    ALLOC_COUNTER_POINTER = 24  # size = 4
+    EXE_COUNTER_POINTER = 28  # size = 4
+    #end of Q header
+    LOCK_TIMEOUT = 0.5
     LOCK_CHECK_INTERVAL = 0.05
     MAX_CAPACITY = 0.90
     WATER_MARK = bytearray()
@@ -90,27 +98,28 @@ class Queue:
         Queue.next_serial += 1
         return q_id
 
-    def __init__(self, from_p: str, to_p: str, q_id: str, size=1000 * 4096):
+    def __init__(self, from_p: str, to_p: str, q_id: str, size, host=None):
         min_q_size = self.Q_CONTROL_SIZE + self.FRAME_HEADER_SIZE + 1  # send at least 1 byte ...
         if size < min_q_size:
             raise MemoryError(f"Queue size must be at least {min_q_size}")
-        self.id = q_id
+        self.q_id = q_id
         self.from_p = from_p
         self.to_p = to_p
         self.length = 10
-        self.name = f"{node_config.machine_id}:{from_p} -> {to_p} ({self.id})"
+        self.name = f"{node_config.machine_id}:{from_p} -> {to_p} ({self.q_id})"
         self.memory_name = f"Q_{q_id}"
         self.size = size
         self.nextMessageAddress = 0
         self.currentAddress = 0
-        self.enqueue_count = 0
-        self.dequeue_count = 0
+        self.host = host
         try:
             self.mem = shared_memory.SharedMemory(name=self.memory_name, create=True, size=self.size)
+            self.mem.buf[:] = bytearray(self.size)
             self.status = LOCK_STATUS.OPEN
             self.direction = Q_DIRECTION.NORMAL
             self.alloc_index = self.DATA_START_POINT
             self.exe_index = self.DATA_START_POINT
+
         except FileExistsError:
             self.mem = shared_memory.SharedMemory(name=self.memory_name, size=self.size)
 
@@ -134,7 +143,8 @@ class Queue:
             if frame_status != FRAME_STATUS.CREATED:
                 return None
             if watermark != self.WATER_MARK:
-                raise BrokenPipeError(f"{current_milli_time()} - Missing watermark on index:{watermark} @ {self.exe_index}")
+                raise BrokenPipeError(
+                    f"{current_milli_time()} - Missing watermark on index:{watermark} @ {self.exe_index}")
 
             frame_d_type = frame_header[self.FRAME_TYPE_OFFSET]
             frame_size = int.from_bytes(frame_header[self.FRAME_SIZE_OFFSET:self.FRAME_SIZE_OFFSET + 4], "little")
@@ -166,9 +176,10 @@ class Queue:
                 self.exe_index = self.DATA_START_POINT + (self.exe_index + frame_size) % self.size
             actual_crc32 = binascii.crc32(frame_data).to_bytes(4, "little")
             if expected_crc32 != actual_crc32:
-                raise BrokenPipeError(f"Frame CRC32 error at index:{start_exe_index}")
+                print(f"CRC Check: Expected:{expected_crc32},Actual:{actual_crc32}")
+                raise BrokenPipeError(f"Frame CRC32 error at index:{start_exe_index}, exe count:{self.exe_counter} ")
             frame = DataFrame.from_byte_arr(frame_data, frame_d_type)
-            self.dequeue_count += 1
+            self.exe_counter += 1
             return frame
         finally:
             await self.release_read_lock()
@@ -191,7 +202,6 @@ class Queue:
             f"Put {current_milli_time()} - Frame size:{frame_size}, free space:{self.free_space}, alloc_index:{self.alloc_index},exe_index:{self.exe_index}")
         try:
             await self.acquire_write_lock()
-            await self.acquire_read_lock()
             body = msg.byte_arr_data
             header = bytearray(self.FRAME_HEADER_SIZE)
             header[self.FRAME_STATUS_OFFSET] = FRAME_STATUS.CREATED
@@ -213,11 +223,10 @@ class Queue:
                 self.mem.buf[frame_address:frame_address + frame_size] = frame
                 self.alloc_index = self.alloc_index + frame_size
                 self.direction = Q_DIRECTION.WRAP
-            self.enqueue_count += 1
+            self.alloc_counter += 1
             return True
         finally:
             await self.release_write_lock()
-            await self.release_read_lock()
 
     def print(self):
         parser = FrameParser(self.mem.buf, self.exe_index)
@@ -306,6 +315,26 @@ class Queue:
         self.mem.buf[self.EXE_POINTER:self.EXE_POINTER + 4] = val.to_bytes(4, "little")
 
     @property
+    def exe_counter(self):
+        return int.from_bytes(self.mem.buf[self.EXE_COUNTER_POINTER:self.EXE_COUNTER_POINTER + 4], "little")
+
+    @exe_counter.setter
+    def exe_counter(self, val):
+        self.mem.buf[self.EXE_COUNTER_POINTER:self.EXE_COUNTER_POINTER + 4] = val.to_bytes(4, "little")
+
+    @property
+    def alloc_counter(self):
+        return int.from_bytes(self.mem.buf[self.ALLOC_COUNTER_POINTER:self.ALLOC_COUNTER_POINTER + 4], "little")
+
+    @alloc_counter.setter
+    def alloc_counter(self, val):
+        self.mem.buf[self.ALLOC_COUNTER_POINTER:self.ALLOC_COUNTER_POINTER + 4] = val.to_bytes(4, "little")
+
+    @property
+    def pending_counter(self):
+        return self.alloc_counter - self.exe_counter
+
+    @property
     def direction(self):
         return int.from_bytes(self.mem.buf[self.DIRECTION_POINTER:self.DIRECTION_POINTER + 1], "little")
 
@@ -320,3 +349,11 @@ class Queue:
     @status.setter
     def status(self, val: LOCK_STATUS):
         self.mem.buf[self.STATUS_POINTER:self.STATUS_POINTER + 1] = int(val).to_bytes(1, "little")
+
+    @property
+    def api_def(self):
+        return API_Queue(from_p=self.from_p, to_p=self.to_p, q_id=self.q_id, size=self.size, host=self.host)
+
+    @property
+    def status_str(self):
+        return f"alloc count:{self.alloc_counter} , exe count: {self.exe_counter} , pending: {self.pending_counter}"

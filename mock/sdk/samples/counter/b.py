@@ -17,8 +17,16 @@ async def main():
     print("Hello b")
     proc = up.Processor("b")
     proc.connect()
-    proc.on_frame(on_frame)
+    #proc.on_frame(on_frame)
     proc.start()
+    while True:
+        try:
+            counter = await proc.get_sync()
+        except TimeoutError:
+            print("timeout")
+            break
+        if counter % 10000 == 0:
+            print(f"{counter / 1000}K")
 
 
 if __name__ == "__main__":

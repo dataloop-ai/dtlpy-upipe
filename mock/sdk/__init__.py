@@ -3,12 +3,13 @@ import subprocess
 import sys
 from multiprocessing import shared_memory
 import socket
-
+from .types import *
 from .pipe import Pipe
 from .processor import Processor
 
 from .dataframe import DataFrame, DType
 
+from .mem_queue import Queue
 
 def is_port_in_use(port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -16,7 +17,7 @@ def is_port_in_use(port):
 
 
 my_path = os.path.dirname(os.path.abspath(__file__))
-server_path = os.path.join(my_path, "node", "server.py")
+server_path = os.path.join(my_path, "node", "server", "server.py")
 py_path = sys.executable
 node_control_mem_name = "node_control_mem"
 node_controller = True
@@ -30,5 +31,5 @@ except FileExistsError:
 if node_controller:
     print("starting node server")
     if is_port_in_use(852):
-        exit(-324, "Adress in use")
+        sys.exit("Server port already in use")
     node_server = subprocess.Popen([py_path, server_path])

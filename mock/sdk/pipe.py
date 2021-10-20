@@ -16,32 +16,32 @@ class Pipe(Processor):
         self.queues = []
         # self.main_block = shared_memory_dict.SharedMemoryDict(name=name, size=1025)
 
-    def _map_pipe(self):
+    async def _map_pipe(self):
         self.queues = self.allocate_queues()
         for q in self.queues:
-            self.node_client.register_queue(q)
+            await self.node_client.register_queue(q)
         # for p in all_procs:
         #     self.control_mem.register_proc(p.name)
 
-    def _prepare(self):
+    async def _prepare(self):
         self.enum()
-        self.register()
-        self._map_pipe()
-        return self.serve()
+        await self.register()
+        await self._map_pipe()
+        return await self.serve()
 
-    def start(self):
-        if not self._prepare():
+    async def start(self):
+        if not await self._prepare():
             raise BrokenPipeError
         loop = asyncio.get_event_loop()
-        loop.run_until_complete(self.baby_sitter())
+        loop.create_task(self.baby_sitter())
 
-    def register(self):
-        if self.node_client.register_controller(self.on_ws_message):
+    async def register(self):
+        if await self.node_client.register_controller(self.on_ws_message):
             self.registered = True
             print("controller registered")
 
-    def serve(self):
-        if self.node_client.serve():
+    async def serve(self):
+        if await self.node_client.serve():
             print("serving")
             return True
         else:
@@ -64,4 +64,4 @@ class Pipe(Processor):
                 if p.proc:
                     line = p.proc.stdout.readline()
                     if line:
-                        print("{}>>>{}".format(p.name, line))
+                        print("{}>>>{}".format(p.name, line.decode().strip()))

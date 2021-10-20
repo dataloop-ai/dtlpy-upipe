@@ -1,19 +1,17 @@
 import json
+import pickle
 from typing import List, Dict
-
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, Form, File
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.responses import HTMLResponse
 import uvicorn
-from pydantic import BaseModel
+from starlette import status
+from starlette.requests import Request
 
-node_server = None
-
-
-class QueueDescriptor(BaseModel):
-    from_p: str
-    to_p: str
-    id: str
+from mock.sdk.types import API_Queue
+from mock.sdk.mem_queue import Queue
 
 
 class NodeServer:
@@ -32,7 +30,8 @@ class NodeServer:
 class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
-        self.queues: Dict[str, List[QueueDescriptor]] = {}
+        self.queues_defs: Dict[str, List[API_Queue]] = {}
+        self.queues: List[Queue] = [None] * 50  # max Queues
         self.ready = False
 
     async def serve(self):
@@ -40,9 +39,9 @@ class ConnectionManager:
 
     def get_queue_def(self, proc_name: str):
         q_json = {"type": "q_update", "queues": []}
-        if not proc_name in self.queues:
+        if not proc_name in self.queues_defs:
             return q_json
-        for q in self.queues[proc_name]:
+        for q in self.queues_defs[proc_name]:
             q_json['queues'].append(q.dict())
         return q_json
 
@@ -60,10 +59,21 @@ class ConnectionManager:
         q_defs = self.get_queue_def(proc_name)
         await self.send_message(proc_name, q_defs)
 
-    async def add_q(self, proc_name, q):
-        if proc_name not in self.queues:
-            self.queues[proc_name] = []
-        self.queues[proc_name].append(q)
+    async def init_q_mem(self, q: API_Queue):
+        self.queues[q.q_id] = Queue(**q.dict())
+        return
+
+    async def put_in_q(self, q: API_Queue, frame):
+        if not self.queues[q.q_id]:
+            raise IndexError(f"Missing Q memory in server {q.q_id}")
+        return await self.queues[q.q_id].put(frame)
+
+    async def add_q(self, proc_name, q: API_Queue):
+        if not self.queues[q.q_id] and q.host:
+            await self.init_q_mem(q)
+        if proc_name not in self.queues_defs:
+            self.queues_defs[proc_name] = []
+        self.queues_defs[proc_name].append(q)
         q_defs = self.get_queue_def(proc_name)
         await self.send_message(proc_name, q_defs)
 
@@ -105,10 +115,19 @@ async def register(proc_name: str):
 
 
 @fast_api.post("/register_q")
-async def register_q(q: QueueDescriptor):
+async def register_q(q: API_Queue):
     await manager.add_q(q.from_p, q)
     await manager.add_q(q.to_p, q)
     return {"Success": True}
+
+
+@fast_api.post("/push_q")
+async def push_q(q: str = Form(...), frame_file: UploadFile = Form(...)):
+    q = API_Queue(**json.loads(q))
+    contents = await frame_file.read()
+    frame = pickle.loads(contents)
+    added = await manager.put_in_q(q, frame)
+    return {"Success": added}
 
 
 @fast_api.get("/register_controller/{proc_name}")
@@ -139,8 +158,17 @@ async def websocket_endpoint(websocket: WebSocket, proc_name: str):
                 raise ValueError("Un supported processor message")
     except WebSocketDisconnect:
         manager.disconnect(proc_name, websocket)
-        #await manager.broadcast(f"Client #{proc_name} left the chat")
+        # await manager.broadcast(f"Client #{proc_name} left the chat")
+
+
+@fast_api.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    print(exc.errors())
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content=jsonable_encoder({"detail": exc.errors(), "body": exc.body}),
+    )
 
 
 if __name__ == "__main__":
-    uvicorn.run("server:fast_api", host="localhost", port=852, reload=False, access_log=True)
+    uvicorn.run("server:fast_api", host="localhost", port=852, reload=False, log_level="warning")

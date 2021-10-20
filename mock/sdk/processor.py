@@ -1,4 +1,5 @@
 import asyncio
+import time
 from enum import IntEnum
 from typing import List, Dict
 
@@ -30,10 +31,11 @@ class Processor:
         await event.wait()
         self.on_frame_callback(self.get_current_message_data())
 
-    def __init__(self, name=None, path=None):  # name is unique per pipe
+    def __init__(self, name=None, path=None, host=None):  # name is unique per pipe
         if not name:
             name = sys.argv[0]
             print(f"Warning:Nameless processor started:{name}")
+        self.host = host
         self.in_qs = []
         self.out_qs = []
         self.serial = None
@@ -52,10 +54,11 @@ class Processor:
         self.node_client = NodeClient(self.name)
         self.execution_status = ProcessorExecutionStatus.RUNNING
         print(f"Processor up: {self.machine_id}  ->{self.exe_name}  (pid {self.pid})")
+        self.default_q_size = 1000 * 4096
         # self.smd = shared_memory_dict.SharedMemoryDict(name=name, size=1025)
 
-    def register(self):
-        messages = self.node_client.register(self.on_ws_message)
+    async def register(self):
+        messages = await self.node_client.register(self.on_ws_message)
         if messages:
             self.registered = True
             for m in messages:
@@ -76,10 +79,10 @@ class Processor:
 
         return processor
 
-    def connect(self):
+    async def connect(self):
         if not self.registered:
-            self.register()
-        self.node_client.connect()
+            await self.register()
+        await self.node_client.connect()
 
     def get_child(self, name):
         proc = next((p for p in self.children if p.name == name), None)
@@ -99,7 +102,7 @@ class Processor:
         allocated = []
         for p in self.children:
             q_id = Queue.allocate_id()
-            q = Queue(self.name, p.name, q_id)
+            q = Queue(self.name, p.name, q_id, self.default_q_size, p.host)
             allocated.append(q)
             allocated.extend(p.allocate_queues())
         return allocated
@@ -139,6 +142,7 @@ class Processor:
         return me + sum([p.count for p in self.children])
 
     def on_frame(self, on_frame):
+        # sys.exit("Or, on frame is not supported anymore, use get or get_sync")
         self.on_frame_callback = on_frame
 
     def get_q(self, q_id, in_q=True):
@@ -146,18 +150,17 @@ class Processor:
         if not in_q:
             qs = self.out_qs
         for q in qs:
-            if qs.id == q_id:
+            if q.q_id == q_id:
                 return q
         return None
 
     def add_q(self, q):
-        if q["to_p"] == self.name and not self.get_q(q['id']):
-            self.in_qs.append(Queue(q['from_p'], q['to_p'], q['id']))
-        if q["from_p"] == self.name and not self.get_q(q['id'], False):
-            self.out_qs.append(Queue(q['from_p'], q['to_p'], q['id']))
+        if q["to_p"] == self.name and not self.get_q(q['q_id']):
+            self.in_qs.append(Queue(q['from_p'], q['to_p'], q['q_id'], int(q['size']), q['host']))
+        if q["from_p"] == self.name and not self.get_q(q['q_id'], False):
+            self.out_qs.append(Queue(q['from_p'], q['to_p'], q['q_id'], int(q['size']), q['host']))
 
     async def process_in_q(self):
-        return
         if len(self.in_qs) == 0:
             return
         q: Queue = self.in_qs[0]
@@ -200,11 +203,25 @@ class Processor:
             return 1
         return 1
 
-    async def emit(self, data, d_type: DType = None):
-        msg = DataFrame(data, d_type)
+    def get_next_q_to_emit(self):
         if len(self.out_qs) == 0:
             raise MemoryError
-        added = await self.out_qs[0].put(msg)
+        q = self.out_qs[0]
+        return q
+
+    def get_next_q_to_process(self):
+        if len(self.in_qs) == 0:
+            raise MemoryError
+        q = self.in_qs[0]
+        return q
+
+    async def emit(self, data, d_type: DType = None):
+        msg = DataFrame(data, d_type)
+        q = self.get_next_q_to_emit()
+        if q.host:
+            added = await self.node_client.put_q(q, msg)
+        else:
+            added = await q.put(msg)
         if not added:
             return False
         return True
@@ -225,10 +242,15 @@ class Processor:
             return frame.data
         return None
 
-    async def get_sync(self):
+    async def get_sync(self, timeout: int = 5):
         q: Queue = self.in_qs[0]
+        start_time = time.time()
+        sleep_time = 0.01
         while True:
             frame = await q.get()
             if frame:
                 return frame.data
-            await asyncio.sleep(.05)
+            elapsed = time.time() - start_time
+            if elapsed > timeout:
+                raise TimeoutError(f"get_sync timeout {elapsed} sec")
+            await asyncio.sleep(sleep_time)
