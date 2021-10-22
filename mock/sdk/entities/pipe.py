@@ -50,8 +50,7 @@ class Pipe(Processor):
         await self.node.init(self.name)
         if not await self._prepare():
             raise BrokenPipeError
-        loop = asyncio.get_event_loop()
-        loop.create_task(self.node.start())
+        await asyncio.wait([await self.node.start()])
 
     async def broadcast(self, body: Dict):
         msg = {"type": "broadcast", "body": body}

@@ -57,7 +57,7 @@ class ProcessType(IntEnum):
     PROCESSOR = 3  # a launched processor
 
 
-class ProcessorRunner:
+class ProcessorInstance:
     def __init__(self, proc, process, instance_id: int):
         self.proc = proc
         self.process = process
@@ -92,7 +92,7 @@ class ProcessorController:
         if self.proc.interpreter:
             interpreter = self.proc.interpreter
         process = subprocess.Popen([interpreter, self.proc.entry], stdout=subprocess.PIPE)
-        runner = ProcessorRunner(self.proc, process, new_instance_id)
+        runner = ProcessorInstance(self.proc, process, new_instance_id)
         self._instances.append(runner)
 
     def _allocate_new_instance_id(self):
@@ -205,6 +205,7 @@ class ComputeNode:
             return False
 
     async def start(self):
+        pipe_complete = asyncio.Future()
         launched = 0
         for proc_name in self.processors:
             p: ProcessorController = self.processors[proc_name]
@@ -214,18 +215,38 @@ class ComputeNode:
             p.launch_instance()
         print(f"Started {launched} processors")
         loop = asyncio.get_event_loop()
-        loop.create_task(self.baby_sitter())
+        loop.create_task(self.baby_sitter(pipe_complete))
+        return pipe_complete
 
-    async def baby_sitter(self):
+    def remove_instance(self, instance: ProcessorInstance):
+        p = self.processors[instance.name]
+        p.instances.remove(instance)
+
+    def handle_instance_exit(self, code, instance: ProcessorInstance):
+        if code == 0:
+            print(f"{instance.name}({instance.instance_id}) >> ************Completed**************")
+            self.remove_instance(instance)
+            return
+
+    async def baby_sitter(self, pipe_complete: asyncio.Future):
         print("Process monitor on")
         while True:
             await asyncio.sleep(.1)
             for proc_name in self.processors:
+                running_instances = 0
                 p = self.processors[proc_name]
                 for i in p.instances:
+                    exit_code = i.process.poll()
+                    if exit_code is not None:
+                        self.handle_instance_exit(exit_code, i)
+                    running_instances += 1
                     line = i.process.stdout.readline()
                     if line:
                         print(f"{i.name}({i.instance_id})>>>{line.decode().strip()}")
+            if running_instances == 0:
+                print("Pipe completed")
+                pipe_complete.set_result(0)
+                return
 
     @property
     def api_def(self):
