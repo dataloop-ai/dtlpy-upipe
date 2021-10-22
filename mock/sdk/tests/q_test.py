@@ -3,7 +3,7 @@ import asyncio
 import numpy as np
 
 from mock.sdk import DataFrame, DType
-from mock.sdk.mem_queue import Queue
+from mock.sdk.entities.mem_queue import Queue
 
 
 async def test_throughput(count: int):

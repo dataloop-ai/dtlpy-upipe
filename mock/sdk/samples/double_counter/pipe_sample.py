@@ -1,13 +1,13 @@
 import asyncio
 
 import mock.sdk as up
-
+from mock.sdk.entities import Processor, Pipe,Queue
 
 async def main():
-    a = up.Processor('a', path='a.py')
-    b = up.Processor('b', path='b.py')
-    c = up.Processor('c', path='c.py')
-    pipe = up.Pipe('plus-one')
+    a = Processor('a', entry='a.py')
+    b = Processor('b', entry='b.py')
+    c = Processor('c', entry='c.py')
+    pipe = Pipe('plus-one')
     a.add(c)
     pipe.add(a).add(b)
     await pipe.start()

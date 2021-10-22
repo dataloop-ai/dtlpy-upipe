@@ -10,7 +10,7 @@ import time
 import httpx
 from aiohttp import FormData, ClientSession
 
-from mock.sdk import API_Proc, API_Response
+from mock.sdk import API_Proc, API_Response, API_Node
 
 counter = 0
 
@@ -65,11 +65,28 @@ class NodeClient:
         self.socket = None
         self.connected = False
         self.keep_alive = False
+        self.terminate = False  # just before we go ...
+
+    async def cleanup(self):
+        for s in self.sessions:
+            await s.close()
+        if self._server_session:
+            await self._server_session.close()
 
     @retry(times=3)
-    async def register(self, proc: API_Proc, message_handler):
-        register_url = f"http://{host}/register"
+    async def ping(self):
+        ping_url = f"http://{host}/ping"
+        return await self.server_session.get(ping_url)
+
+    @retry(times=3)
+    async def register_proc(self, proc: API_Proc):
+        register_url = f"http://{host}/register_proc"
         return await self.server_session.post(register_url, json=proc.dict())
+
+    @retry(times=3)
+    async def register_node(self, node: API_Node):
+        register_url = f"http://{host}/register_node"
+        return await self.server_session.post(register_url, json=node.dict())
 
     async def serve(self, ):
         serve_url = f"http://{host}/serve"
@@ -157,6 +174,8 @@ class NodeClient:
 
     async def keep_connection_alive(self):
         while True:
+            if self.terminate:
+                break
             if not self.connected:
                 try:
                     self.socket = await websockets.connect(self.ws_url)

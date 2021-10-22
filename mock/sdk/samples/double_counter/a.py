@@ -1,12 +1,12 @@
 import asyncio
 
 import mock.sdk as up
-from mock.sdk import Queue
+from mock.sdk.entities import Processor, Pipe,Queue
 
 
 async def main():
     print("Hello a")
-    me = up.Processor("a")
+    me = Processor("a")
     await me.connect()
     print("a started")
     val = 1

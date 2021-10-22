@@ -3,7 +3,7 @@ import asyncio
 import sys
 
 import mock.sdk as up
-from mock.sdk import Queue
+from mock.sdk.entities import Processor, Pipe,Queue
 
 logging.basicConfig(level=logging.DEBUG, format='B %(process)d - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 async def main():
     logger.info("Hello b")
-    proc = up.Processor("b")
+    proc = Processor("b")
     await proc.connect()
     proc.start()
     logger.info("b started")

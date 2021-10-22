@@ -14,10 +14,18 @@ class API_Queue(BaseModel):
 
 class API_Proc(BaseModel):
     name: str
-    path: str
-    pid: int
+    entry: Optional[str]
+    interpreter: Optional[str]
     controller: bool
 
+class API_Proc_Instance(API_Proc):
+    instance_id: int
+    pid: int
+
+class API_Node(BaseModel):
+    name: str
+    host_name: str
+    id: str
 
 class API_Response(BaseModel):
     success: bool

@@ -3,18 +3,21 @@ import asyncio
 import mock.sdk as up
 import time
 
-from mock.sdk import DataFrame, Queue
+from mock.sdk.entities import Queue, Processor
 
 
 async def main():
     print("Hello b")
-    proc = up.Processor("b")
+    proc = Processor("b")
     await proc.connect()
 
     proc.start()
+    counter = 0
     while True:
         try:
             counter = await proc.get_sync()
+            if counter == 100000:
+                break
             q: Queue = proc.in_qs[0]
             if counter != q.exe_counter:
                 raise BrokenPipeError(f"Execution error: counter {counter}, executed {q.exe_counter}")
@@ -28,4 +31,4 @@ async def main():
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main())
-    loop.run_forever()
+    print("b Done")

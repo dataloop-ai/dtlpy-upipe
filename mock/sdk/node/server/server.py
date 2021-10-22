@@ -2,21 +2,24 @@ import asyncio
 import json
 import pickle
 from typing import List, Dict
-
+import os
 import psutil
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, Form, File
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, Form
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from fastapi.responses import HTMLResponse
 import uvicorn
 from starlette import status
 from starlette.requests import Request
 
-from mock.sdk import HW_Usage
-from mock.sdk.types import API_Queue, API_Response, API_Proc
-from mock.sdk.mem_queue import Queue
 
+from mock.sdk.types import API_Queue, API_Response, API_Proc, HW_Usage
+from mock.sdk.entities.mem_queue import Queue
+from mock.sdk.utils import SharedMemoryBuffer, MEMORY_ALLOCATION_MODE
+
+node_shared_mem_name = "node_status"
+node_shared_mem_size = 100
+SERVER_PID_POINTER = 0 #size 4
 
 class NodeServer:
     _instance = None
@@ -33,6 +36,7 @@ class NodeServer:
 
 class ProcessManager:
     USAGE_HISTORY_LIMIT = 100
+    SERVER_PID_POINTER = 0  # size 4, defined also in node.py
 
     def __init__(self):
         self.proc_connections: Dict[str, WebSocket] = {}
@@ -40,6 +44,9 @@ class ProcessManager:
         self.queues: List[Queue] = [None] * 50  # max Queues
         self.ready = False
         self.usage_history: List[HW_Usage] = []
+        self.node_control_mem = SharedMemoryBuffer(node_shared_mem_name, node_shared_mem_size,
+                                                   MEMORY_ALLOCATION_MODE.USE_ONLY)
+        self.node_control_mem.write_int(self.SERVER_PID_POINTER, os.getpid())
 
     async def serve(self):
         self.ready = True
@@ -150,11 +157,10 @@ class ProcessManager:
             await connection.send_json(message)
 
 
-manager = ProcessManager()
+manager = None #set on startup
 fast_api = FastAPI()
 controller_proc_name: str = None
-loop = asyncio.get_event_loop()
-loop.create_task(manager.monitor())
+
 
 
 @fast_api.get("/")
@@ -170,7 +176,12 @@ async def serve():
     return JSONResponse(content={"Success": True})
 
 
-@fast_api.post("/register")
+@fast_api.get("/ping")
+async def ping():
+    return API_Response(success=True)
+
+
+@fast_api.post("/register_proc")
 async def register(proc: API_Proc):
     global controller_proc_name
     if proc.controller:
@@ -205,7 +216,11 @@ async def push_q(q: str = Form(...), frame_file: UploadFile = Form(...)):
 
 @fast_api.on_event("startup")
 async def startup_event():
+    global manager
     print("network ready")
+    manager = ProcessManager()
+    loop = asyncio.get_event_loop()
+    loop.create_task(manager.monitor())
 
 
 @fast_api.websocket("/ws/connect/{proc_name}")

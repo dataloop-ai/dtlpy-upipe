@@ -1,20 +1,26 @@
 import asyncio
-import inspect
 import time
 from enum import IntEnum
+from multiprocessing import shared_memory
 from typing import List, Dict
+from colorama import init, Fore
+
 
 import psutil
-import websocket
 
-from . import API_Proc
+from mock.sdk import API_Proc
 from .dataframe import DType, DataFrame
 from .mem_queue import Queue
 import sys
 import subprocess
-from .node_config import node_config
+
 import os
-from .node import NodeClient
+import mock.sdk.node.client as client
+import atexit
+
+from ..utils import processor_shared_memory_name
+
+init(autoreset=True)
 
 
 class ProcessorExecutionStatus(IntEnum):
@@ -28,13 +34,14 @@ class Processor:
     next_serial = 0
     in_qs: List[Queue]
     out_qs: List[Queue]
+    SHARED_MEM_SIZE = 64
 
     async def waiter(self, event):
         print('waiting for it ...')
         await event.wait()
         self.on_frame_callback(self.get_current_message_data())
 
-    def __init__(self, name=None, path=None, host=None):  # name is unique per pipe
+    def __init__(self, name=None, entry=None, host=None ):  # name is unique per pipe
         if not name:
             name = sys.argv[0]
             print(f"Warning:Nameless processor started:{name}")
@@ -43,34 +50,38 @@ class Processor:
         self.out_qs = []
         self.serial = None
         self.registered = False
+        self.connected = False
         self.controller = False
         self.proc = None
-        self.path = path
+        self.entry = entry
         self.on_frame_callback = None
         self.name = name
         self.length = 10
         self.children = list()
-        self.machine_id = node_config.machine_id
         self.pid = os.getpid()
         self.exe_name = os.path.basename(os.path.abspath(sys.modules['__main__'].__file__))
-        self.proc_id = f"{self.machine_id}:{self.pid}"
-        self.node_client = NodeClient(self.name)
+        self.proc_id = f"{self.name}:{self.pid}"
+        self.node_client = client.NodeClient(self.name)
         self.execution_status = ProcessorExecutionStatus.RUNNING
-        print(f"Processor up: {self.machine_id}  ->{self.exe_name}  (pid {self.pid})")
         self.default_q_size = 1000 * 4096
         self.consumer_next_q_index = 0
+        self.interpreter = sys.executable
         # self.smd = shared_memory_dict.SharedMemoryDict(name=name, size=1025)
+        atexit.register(self.cleanup)
+        processor_memory_name = processor_shared_memory_name(self.api_def)
+        try:
+            self.mem = shared_memory.SharedMemory(name=processor_memory_name, create=True, size=self.SHARED_MEM_SIZE)
+            self.mem.buf[:] = bytearray(self.SHARED_MEM_SIZE)
+        except FileExistsError:
+            self.mem = shared_memory.SharedMemory(name=processor_memory_name, size=self.SHARED_MEM_SIZE)
 
-    async def register(self):
-        response_data = await self.node_client.register(self.api_def, self.on_ws_message)
-        if not response_data:
-            return self.registered
-        if 'messages' in response_data:
-            messages = response_data['messages']
-            self.registered = True
-            for m in messages:
-                self.handle_message(m)
-        return self.registered
+    def cleanup(self):
+        print(Fore.BLUE + f"Processor cleanup")
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(self.node_client.cleanup())
+        print(Fore.RED + 'Bye')
+
+
 
     def add_in_q(self, q):
         self.in_qs.append(q)
@@ -86,10 +97,24 @@ class Processor:
 
         return processor
 
+    async def register(self):
+        if self.registered:
+            return
+        response_data = await self.node_client.register_proc(self.api_def)
+        messages = response_data['messages']
+        for m in messages:
+            self.handle_message(m)
+        self.registered = True
+        return self.registered
+
+    def start(self):
+        pass
+
     async def connect(self):
         if not self.registered:
             await self.register()
-        await self.node_client.connect()
+        if not self.connected:
+            self.connected = await self.node_client.connect()
 
     def get_child(self, name):
         proc = next((p for p in self.children if p.name == name), None)
@@ -128,19 +153,6 @@ class Processor:
             #     await asyncio.sleep(.5)
             await asyncio.sleep(1)
             await self.report_hw_metrics()
-
-    def start(self):
-        started = []
-        if self.path:
-            started.append(self)
-            py_path = sys.executable
-            self.proc = subprocess.Popen([py_path, self.path],
-                                         stdout=subprocess.PIPE)
-        for p in self.children:
-            started.extend(p.start())
-        loop = asyncio.get_event_loop()
-        loop.create_task(self.monitor())
-        return started
 
     def all_child_procs(self):
         procs = [self]
@@ -275,4 +287,5 @@ class Processor:
 
     @property
     def api_def(self):
-        return API_Proc(name=self.name, path=self.executable, pid=self.pid, controller=self.controller)
+        return API_Proc(name=self.name, entry=self.entry, interpreter=self.interpreter, pid=self.pid,
+                        controller=self.controller)

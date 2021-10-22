@@ -1,8 +1,10 @@
 import asyncio
-from multiprocessing import shared_memory
+
 from typing import Dict
 
 from .processor import Processor
+from .. import API_Proc
+from ..node.node import ComputeNode
 
 control_mem_name = "control_mem"
 
@@ -14,6 +16,7 @@ class Pipe(Processor):
         self.controller = True
         self.active = list()
         self.queues = []
+        self.node = ComputeNode.instance()
         # self.main_block = shared_memory_dict.SharedMemoryDict(name=name, size=1025)
 
     async def _map_pipe(self):
@@ -25,38 +28,31 @@ class Pipe(Processor):
 
     async def _prepare(self):
         self.enum()
-        await self.register()
+        await self.register(self)
         await self._map_pipe()
-        return await self.serve()
+        return True
+
+    async def register(self, proc):
+        response_data = await self.node.register_proc(proc.api_def)
+        print(f"Registered:  {proc.api_def.name}")
+        proc.registered = True
+        if response_data and 'messages' in response_data:
+            messages = response_data['messages']
+            for m in messages:
+                proc.handle_message(m)
+        if not proc.registered:
+            raise EnvironmentError(f"Cant register processor {self.name}")
+        for p in proc.children:
+            await self.register(p)
+        return True
 
     async def start(self):
+        await self.node.init(self.name)
         if not await self._prepare():
             raise BrokenPipeError
         loop = asyncio.get_event_loop()
-        loop.create_task(self.baby_sitter())
-
-    async def serve(self):
-        if await self.node_client.serve():
-            print("serving")
-            return True
-        else:
-            print("Error serving")
-            return False
+        loop.create_task(self.node.start())
 
     async def broadcast(self, body: Dict):
         msg = {"type": "broadcast", "body": body}
         return await self.node_client.send_message(msg)
-
-    async def baby_sitter(self):
-        print("Running processors in 3 sec")
-        await asyncio.sleep(3)
-        self.active = super(Pipe, self).start()
-        print("Started {} processors".format(self.count))
-        await self.broadcast({"control": "run"})
-        while True:
-            await asyncio.sleep(.1)
-            for p in self.active:
-                if p.proc:
-                    line = p.proc.stdout.readline()
-                    if line:
-                        print("{}>>>{}".format(p.name, line.decode().strip()))

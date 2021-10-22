@@ -1,12 +1,12 @@
 import binascii
 import os
 import time
-from enum import Enum, IntEnum
+from enum import IntEnum
 from multiprocessing import shared_memory
 
-from . import API_Queue
+from mock.sdk import API_Queue
 from .dataframe import DataFrame
-from .node_config import node_config
+
 import asyncio
 
 debug = False
@@ -106,7 +106,7 @@ class Queue:
         self.from_p = from_p
         self.to_p = to_p
         self.length = 10
-        self.name = f"{node_config.machine_id}:{from_p} -> {to_p} ({self.q_id})"
+        self.name = f"{from_p} -> {to_p} ({self.q_id})"
         self.memory_name = f"Q_{q_id}"
         self.size = size
         self.nextMessageAddress = 0

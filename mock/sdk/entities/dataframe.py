@@ -7,6 +7,7 @@ from typing import List
 import numpy as np
 from pydantic import BaseModel
 
+__all__ = ['DType', 'DataFrame']
 
 def rs232_checksum(the_bytes):
     return b'%02X' % (sum(the_bytes) & 0xFF)
