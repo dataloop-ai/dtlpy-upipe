@@ -3,16 +3,14 @@ import asyncio
 import sys
 import time
 
-import mock.sdk as up
-from mock.sdk import Queue
-
+from mock.sdk.entities import Queue, Processor
 logging.basicConfig(level=logging.DEBUG, format='%(process)d - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("writer")
 
 
 async def main():
     logger.info("Hello writer")
-    proc = up.Processor("writer")
+    proc = Processor("writer")
     await proc.connect()
     proc.start()
     logger.info("writer started")
@@ -21,6 +19,8 @@ async def main():
     tic = time.time()
     while True:
         counter += 1
+        if counter == 15000:
+            break
         try:
             frame = await proc.get_sync()
             if first:
@@ -37,4 +37,3 @@ async def main():
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main())
-    loop.run_forever()

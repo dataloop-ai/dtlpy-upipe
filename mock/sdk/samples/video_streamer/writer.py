@@ -1,6 +1,6 @@
 import asyncio
 import cv2
-import mock.sdk as up
+from mock.sdk.entities import Queue, Processor
 import time
 
 from mock.sdk import DataFrame
@@ -16,8 +16,8 @@ def on_frame(frame: DataFrame):
 
 async def main():
     print("Hello writer")
-    proc = up.Processor("writer")
-    proc.connect()
+    proc = Processor("writer")
+    await proc.connect()
     proc.on_frame(on_frame)
     proc.start()
 

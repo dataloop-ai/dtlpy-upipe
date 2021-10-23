@@ -68,7 +68,8 @@ class NodeClient:
         self.terminate = False  # just before we go ...
 
     async def cleanup(self):
-        for s in self.sessions:
+        for proc_name in self.sessions:
+            s = self.sessions[proc_name]
             await s.close()
         if self._server_session:
             await self._server_session.close()

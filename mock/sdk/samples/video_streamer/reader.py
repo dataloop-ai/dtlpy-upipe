@@ -1,12 +1,12 @@
 import cv2
 import asyncio
 
-import mock.sdk as up
-
+from mock.sdk import DType
+from mock.sdk.entities import Queue, Processor
 
 async def main():
-    me = up.Processor("reader")
-    me.connect()
+    me = Processor("reader")
+    await me.connect()
     print("a connected")
     cap = cv2.VideoCapture(r"E:\TypesExamples\surfer.webm")
     i_frame = 0
@@ -16,7 +16,7 @@ async def main():
         if not ret:
             break
         frame = cv2.resize(frame, (64, 64))
-        if await me.emit(frame, up.DType.ND_ARR):
+        if await me.emit(frame, DType.ND_ARR):
 
             if i_frame % 10 == 0:
                 print(f"{i_frame}")

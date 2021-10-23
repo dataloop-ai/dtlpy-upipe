@@ -115,6 +115,7 @@ class ProcessorController:
 
 
 class ComputeNode:
+    NODE_PID_POINTER = 4 #size 4, starts from 4 after server id
     config = NodeConfig()
     _instance = None
 
@@ -145,13 +146,21 @@ class ComputeNode:
         self.node_client = NodeClient("node-main")
         self.processors: Dict[str, ProcessorController] = {}
 
-    async def kill_server(self):
-        print("Closing server")
-        server_pid = self.mem.read_int(SERVER_PID_POINTER)
-        if server_pid == 0:
+    async def kill_process(self, pid):
+        if pid == 0:
             return
-        p = psutil.Process(server_pid)
+        p = psutil.Process(pid)
         p.terminate()  # or p.kill()
+
+    async def kill_server(self):
+        print("Closing old server")
+        server_pid = self.mem.read_int(SERVER_PID_POINTER)
+        return await self.kill_process(server_pid)
+
+    async def kill_node(self):
+        print("Closing old node")
+        node_pid = self.mem.read_int(self.NODE_PID_POINTER)
+        return await self.kill_process(node_pid)
 
     # noinspection PyBroadException
     async def init_node(self):
@@ -162,6 +171,7 @@ class ComputeNode:
             sys.exit("Server port already in use")
         self.server_process = subprocess.Popen([self.interpreter_path, self.server_path])
         self.mem.write_int(SERVER_PID_POINTER, self.server_process.pid)
+        self.mem.write_int(self.NODE_PID_POINTER, os.getpid())
         print("Waiting for localhost")
         while True:
             retry_time = 5
@@ -184,7 +194,12 @@ class ComputeNode:
             print(f"Warning:Nameless node started:{self.name} by {sys.argv[0]}")
         else:
             print(f"Starting node:{self.name} by {sys.argv[0]}")
-        self.mem = SharedMemoryBuffer(node_shared_mem_name, node_shared_mem_size, MEMORY_ALLOCATION_MODE.CREATE_ONLY)
+        try:
+            self.mem = SharedMemoryBuffer(node_shared_mem_name, node_shared_mem_size, MEMORY_ALLOCATION_MODE.CREATE_ONLY)
+        except MemoryError:
+            self.mem = SharedMemoryBuffer(node_shared_mem_name, node_shared_mem_size,
+                                          MEMORY_ALLOCATION_MODE.USE_ONLY)
+            await self.kill_node()
         await self.init_node()
 
     async def register_proc(self, proc: API_Proc):

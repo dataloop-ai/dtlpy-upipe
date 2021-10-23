@@ -17,6 +17,7 @@ class Pipe(Processor):
         self.active = list()
         self.queues = []
         self.node = ComputeNode.instance()
+        self._completion_future = None
         # self.main_block = shared_memory_dict.SharedMemoryDict(name=name, size=1025)
 
     async def _map_pipe(self):
@@ -50,7 +51,12 @@ class Pipe(Processor):
         await self.node.init(self.name)
         if not await self._prepare():
             raise BrokenPipeError
-        await asyncio.wait([await self.node.start()])
+        self._completion_future = await self.node.start()
+
+    async def wait_for_completion(self):
+        if not self._completion_future:
+            return
+        await asyncio.wait([self._completion_future])
 
     async def broadcast(self, body: Dict):
         msg = {"type": "broadcast", "body": body}

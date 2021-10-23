@@ -1,8 +1,5 @@
 import asyncio
 
-import mock.sdk as up
-import time
-
 from mock.sdk.entities import Queue, Processor
 
 

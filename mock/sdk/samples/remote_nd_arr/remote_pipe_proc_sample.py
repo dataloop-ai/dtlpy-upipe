@@ -1,22 +1,21 @@
 import asyncio
-
-import mock.sdk as up
+from mock.sdk.entities import Processor, Pipe,Queue
 
 
 async def main():
     print("Hello pipe")
-    a = up.Processor('a', path='a.py')
-    b = up.Processor('b', path='b.py', host='localhost')
-    pipe = up.Pipe('plus-one')
-    pipe.add(a).add(b)
+    reader = Processor('reader', entry='reader.py')
+    writer = Processor('writer', entry='writer.py', host='localhost')
+    pipe = Pipe('streamer')
+    pipe.add(reader).add(writer)
     await pipe.start()
     print("Running")
+    await pipe.wait_for_completion()
 
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main())
-    loop.run_forever()
 
     ##########################################
     #

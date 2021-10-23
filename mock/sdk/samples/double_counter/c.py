@@ -1,38 +1,30 @@
-import logging
 import asyncio
-import sys
-
-import mock.sdk as up
-from mock.sdk.entities import Processor, Pipe,Queue
-
-logging.basicConfig(level=logging.DEBUG, format='C:%(process)d - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+from mock.sdk.entities import Queue, Processor
 
 
 async def main():
-    logger.info("Hello c")
+    print("Hello c")
     proc = Processor("c")
     await proc.connect()
+
     proc.start()
-    logger.info("b started")
-    first = True
+    counter = 0
     while True:
         try:
             counter = await proc.get_sync()
-            # if counter + 1 != q.exe_counter:
-            #     raise IndexError("Q counter mismatch ")
-            if first:
-                first = False
-                logger.info("b got first message")
-                sys.stdout.flush()
+            if counter == 100000:
+                break
+            q: Queue = proc.in_qs[0]
+            if counter != q.exe_counter:
+                raise BrokenPipeError(f"Execution error: counter {counter}, executed {q.exe_counter}")
         except TimeoutError:
-            logger.info("timeout")
+            print("timeout")
             break
-        if counter % 1000 == 0:
-            logger.info(f"{float(counter / 1000)}K")
+        if counter % 10000 == 0:
+            print(f"{counter / 1000}K")
 
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main())
-    loop.run_forever()
+    print("c Done")

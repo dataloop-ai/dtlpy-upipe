@@ -1,16 +1,18 @@
 import asyncio
+
+import mock.sdk as up
 from mock.sdk.entities import Processor, Pipe,Queue
 
-
 async def main():
-    a = Processor('reader.py')
-    b = Processor('display.py')
+    a = Processor('a', entry='a.py')
+    b = Processor('b', entry='b.py')
+    c = Processor('c', entry='c.py')
     pipe = Pipe('plus-one')
+    a.add(c)
     pipe.add(a).add(b)
     await pipe.start()
-    print("Running")
     await pipe.wait_for_completion()
-    print("Video reader waiting")
+    print("Running")
 
 
 if __name__ == "__main__":

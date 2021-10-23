@@ -1,19 +1,18 @@
 import asyncio
-from mock.sdk.entities import Processor, Pipe,Queue
+
+from mock.sdk.entities import Processor, Pipe
 
 
 async def main():
-    a = Processor('reader.py')
-    b = Processor('display.py')
+
+    a = Processor('a', entry='a.py')
+    b = Processor('b', entry='b.py', host="localhost")
     pipe = Pipe('plus-one')
     pipe.add(a).add(b)
     await pipe.start()
-    print("Running")
     await pipe.wait_for_completion()
-    print("Video reader waiting")
-
+    print("Running")
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main())
-    loop.run_forever()

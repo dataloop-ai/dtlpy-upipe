@@ -3,8 +3,9 @@ import time
 from enum import IntEnum
 from multiprocessing import shared_memory
 from typing import List, Dict
-from colorama import init, Fore
 
+from aiohttp import ClientConnectorError
+from colorama import init, Fore
 
 import psutil
 
@@ -36,15 +37,11 @@ class Processor:
     out_qs: List[Queue]
     SHARED_MEM_SIZE = 64
 
-    async def waiter(self, event):
-        print('waiting for it ...')
-        await event.wait()
-        self.on_frame_callback(self.get_current_message_data())
-
-    def __init__(self, name=None, entry=None, host=None ):  # name is unique per pipe
+    def __init__(self, name=None, entry=None, host=None, input_buffer_size=1000 * 4096):  # name is unique per pipe
         if not name:
             name = sys.argv[0]
             print(f"Warning:Nameless processor started:{name}")
+        self.input_buffer_size = input_buffer_size
         self.host = host
         self.in_qs = []
         self.out_qs = []
@@ -63,7 +60,6 @@ class Processor:
         self.proc_id = f"{self.name}:{self.pid}"
         self.node_client = client.NodeClient(self.name)
         self.execution_status = ProcessorExecutionStatus.RUNNING
-        self.default_q_size = 1000 * 4096
         self.consumer_next_q_index = 0
         self.interpreter = sys.executable
         # self.smd = shared_memory_dict.SharedMemoryDict(name=name, size=1025)
@@ -76,12 +72,10 @@ class Processor:
             self.mem = shared_memory.SharedMemory(name=processor_memory_name, size=self.SHARED_MEM_SIZE)
 
     def cleanup(self):
-        print(Fore.BLUE + f"Processor cleanup")
+        print(Fore.BLUE + f"Processor cleanup : {self.name}")
         loop = asyncio.get_event_loop()
         loop.run_until_complete(self.node_client.cleanup())
-        print(Fore.RED + 'Bye')
-
-
+        print(Fore.RED + f'Bye {self.name}')
 
     def add_in_q(self, q):
         self.in_qs.append(q)
@@ -100,8 +94,17 @@ class Processor:
     async def register(self):
         if self.registered:
             return
-        response_data = await self.node_client.register_proc(self.api_def)
-        messages = response_data['messages']
+        printed = False
+        while True:
+            try:
+                response_data = await self.node_client.register_proc(self.api_def)
+                messages = response_data['messages']
+                break
+            except ClientConnectorError:
+                if not printed:
+                    print("Waiting for node controller ...")
+                    printed = True
+                await asyncio.sleep(5)
         for m in messages:
             self.handle_message(m)
         self.registered = True
@@ -134,7 +137,7 @@ class Processor:
         allocated = []
         for p in self.children:
             q_id = Queue.allocate_id()
-            q = Queue(self.name, p.name, q_id, self.default_q_size, p.host)
+            q = Queue(self.name, p.name, q_id, self.input_buffer_size, p.host)
             allocated.append(q)
             allocated.extend(p.allocate_queues())
         return allocated
@@ -168,7 +171,7 @@ class Processor:
         return me + sum([p.count for p in self.children])
 
     def on_frame(self, on_frame):
-        # sys.exit("Or, on frame is not supported anymore, use get or get_sync")
+        sys.exit("Or, on frame is not supported anymore, use get or get_sync")
         self.on_frame_callback = on_frame
 
     def get_q(self, q_id, in_q=True):
@@ -274,7 +277,7 @@ class Processor:
         sleep_time = 0.01
         while True:
             data = await self.get()
-            if data:
+            if data is not None:
                 return data
             elapsed = time.time() - start_time
             if elapsed > timeout:
