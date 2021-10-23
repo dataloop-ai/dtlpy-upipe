@@ -1,7 +1,6 @@
 import asyncio
 
-import mock.sdk as up
-from mock.sdk.entities import Processor, Pipe,Queue
+from mock.sdk.entities import Processor, Pipe
 
 async def main():
     a = Processor('a', entry='a.py')
@@ -12,10 +11,9 @@ async def main():
     pipe.add(a).add(b)
     await pipe.start()
     await pipe.wait_for_completion()
-    print("Running")
+    print("Done")
 
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main())
-    loop.run_forever()

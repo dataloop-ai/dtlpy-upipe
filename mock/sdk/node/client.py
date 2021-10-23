@@ -1,6 +1,7 @@
 import asyncio
 import json
 import pickle
+import platform
 from typing import Dict
 
 import aiohttp
@@ -15,7 +16,32 @@ from mock.sdk import API_Proc, API_Response, API_Node
 counter = 0
 
 host = 'localhost:852'
+# ************aiohttp crap **********************
+# https://github.com/aio-libs/aiohttp/issues/4324
+if platform.system() == 'Windows':
+    from functools import wraps
 
+    # noinspection PyProtectedMember
+    from asyncio.proactor_events import _ProactorBasePipeTransport
+
+
+    def silence_event_loop_closed(func):
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            try:
+                return func(self, *args, **kwargs)
+            except RuntimeError as e:
+                if str(e) != 'Event loop is closed':
+                    raise
+
+        return wrapper
+
+
+    # Silence the exception here.
+    _ProactorBasePipeTransport.__del__ = silence_event_loop_closed(_ProactorBasePipeTransport.__del__)
+
+
+# ************aiohttp crap end **********************
 
 def retry(times: int, exceptions=()):
     """
@@ -67,12 +93,28 @@ class NodeClient:
         self.keep_alive = False
         self.terminate = False  # just before we go ...
 
+    # noinspection PyBroadException
     async def cleanup(self):
-        for proc_name in self.sessions:
-            s = self.sessions[proc_name]
-            await s.close()
-        if self._server_session:
-            await self._server_session.close()
+        start_time = time.time()
+        while True:
+            try:
+                for proc_name in self.sessions:
+                    s = self.sessions[proc_name]
+                    if s:
+                        await s.close()
+                    self.sessions = []
+                if self._server_session:
+                    await self._server_session.close()
+                    self._server_session = None
+                if self.socket:
+                    await self.socket.drain()
+                    await self.socket.close_connection()
+                    self.socket = None
+                elapsed = time.time() - start_time
+                if elapsed > 3:
+                    break
+            except:
+                break
 
     @retry(times=3)
     async def ping(self):
@@ -181,9 +223,13 @@ class NodeClient:
                 try:
                     self.socket = await websockets.connect(self.ws_url)
                     self.connected = True
+                    break
                 except asyncio.exceptions.TimeoutError:
                     pass
-            await asyncio.sleep(5)
+            try:
+                await asyncio.sleep(5)
+            except RuntimeError:  # sub process no event loop for sleep,RuntimeError('Event loop is closed')
+                return
 
     async def _process(self):
         while True:
@@ -203,11 +249,13 @@ class NodeClient:
         if self.connected:
             return True
         if not self.keep_alive:
-            asyncio.create_task(self.keep_connection_alive())
-            asyncio.create_task(self._process())
+            loop = asyncio.get_event_loop()
+            # loop.create_task(self.keep_connection_alive())
+            loop.create_task(self._process())
             self.keep_alive = True
         start_time = time.time()
         sleep_time = .5
+        self.connected = True
         while True:
             if self.connected:
                 return True

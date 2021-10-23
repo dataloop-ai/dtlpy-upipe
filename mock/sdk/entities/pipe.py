@@ -57,6 +57,7 @@ class Pipe(Processor):
         if not self._completion_future:
             return
         await asyncio.wait([self._completion_future])
+        #self.cleanup()
 
     async def broadcast(self, body: Dict):
         msg = {"type": "broadcast", "body": body}

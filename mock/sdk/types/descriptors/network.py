@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, typing
 from pydantic.class_validators import Optional
 
 node_server = None
@@ -15,6 +15,7 @@ class API_Queue(BaseModel):
 class API_Proc(BaseModel):
     name: str
     entry: Optional[str]
+    function: Optional[str]
     interpreter: Optional[str]
     controller: bool
 

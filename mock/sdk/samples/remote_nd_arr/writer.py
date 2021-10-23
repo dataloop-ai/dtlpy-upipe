@@ -19,7 +19,7 @@ async def main():
     tic = time.time()
     while True:
         counter += 1
-        if counter == 15000:
+        if counter == 3000:
             break
         try:
             frame = await proc.get_sync()

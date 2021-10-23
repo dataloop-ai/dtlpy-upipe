@@ -20,7 +20,7 @@ async def main():
             counter += 1
             if counter % 1000 == 0:
                 logger.info(f"{counter / 1000}K")
-            if counter == 15000:
+            if counter == 3000:
                 break
 
 

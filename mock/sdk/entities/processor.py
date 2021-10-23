@@ -37,7 +37,8 @@ class Processor:
     out_qs: List[Queue]
     SHARED_MEM_SIZE = 64
 
-    def __init__(self, name=None, entry=None, host=None, input_buffer_size=1000 * 4096):  # name is unique per pipe
+    def __init__(self, name=None, entry=None, func=None, host=None,
+                 input_buffer_size=1000 * 4096):  # name is unique per pipe
         if not name:
             name = sys.argv[0]
             print(f"Warning:Nameless processor started:{name}")
@@ -51,9 +52,14 @@ class Processor:
         self.controller = False
         self.proc = None
         self.entry = entry
+        self.function = None
+        if callable(func):
+            self.function = func.__name__
+            if entry:
+                raise ChildProcessError("function can not be used with entry")
+            self.entry = os.path.abspath(sys.modules['__main__'].__file__) #main file
         self.on_frame_callback = None
         self.name = name
-        self.length = 10
         self.children = list()
         self.pid = os.getpid()
         self.exe_name = os.path.basename(os.path.abspath(sys.modules['__main__'].__file__))
@@ -73,6 +79,8 @@ class Processor:
 
     def cleanup(self):
         print(Fore.BLUE + f"Processor cleanup : {self.name}")
+        for task in asyncio.Task.all_tasks():
+            task.cancel()
         loop = asyncio.get_event_loop()
         loop.run_until_complete(self.node_client.cleanup())
         print(Fore.RED + f'Bye {self.name}')
@@ -189,17 +197,6 @@ class Processor:
         if q["from_p"] == self.name and not self.get_q(q['q_id'], False):
             self.out_qs.append(Queue(q['from_p'], q['to_p'], q['q_id'], int(q['size']), q['host']))
 
-    # async def process_in_q(self):
-    #     if len(self.in_qs) == 0:
-    #         return
-    #     q: Queue = self.in_qs[0]
-    #     while True:
-    #         frame = await q.get()
-    #         if frame and self.on_frame_callback:
-    #             self.on_frame_callback(frame)
-    #         else:
-    #             break
-
     def run(self):
         self.execution_status = ProcessorExecutionStatus.RUNNING
 
@@ -290,5 +287,6 @@ class Processor:
 
     @property
     def api_def(self):
-        return API_Proc(name=self.name, entry=self.entry, interpreter=self.interpreter, pid=self.pid,
+        return API_Proc(name=self.name, entry=self.entry, function=self.function, interpreter=self.interpreter,
+                        pid=self.pid,
                         controller=self.controller)

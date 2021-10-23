@@ -1,9 +1,15 @@
 import asyncio
+import inspect
+import multiprocessing
+import pathlib
 import socket
+import types
+from colorama import init, Fore, Back, Style
 from enum import IntEnum
-from multiprocessing import shared_memory
+from io import StringIO
+from multiprocessing.queues import Queue
 from typing import Dict, List
-
+import importlib
 from mock.sdk import API_Node, API_Proc
 from .server import node_shared_mem_name, node_shared_mem_size, SERVER_PID_POINTER
 import sys
@@ -20,6 +26,40 @@ from ..types.descriptors.network import API_Proc_Instance
 from ..utils import processor_shared_memory_name, SharedMemoryBuffer, MEMORY_ALLOCATION_MODE
 
 config_path = 'config.ini'
+init(autoreset=True)
+
+
+# This is a Queue that behaves like stdout
+class StdoutQueue(Queue):
+    def __init__(self, *args, **kwargs):
+        ctx = multiprocessing.get_context()
+        super(StdoutQueue, self).__init__(*args, **kwargs, ctx=ctx)
+
+    def write(self, msg):
+        self.put(msg)
+
+    def flush(self):
+        sys.__stdout__.flush()
+
+    def readline(self):
+        return None
+
+
+def launch_module(mode_name, mod_path, function_name, proc_stdout):
+    old_stdout = sys.stdout
+    sys.stdout = proc_stdout
+    loader = importlib.machinery.SourceFileLoader(mode_name, mod_path)
+    mod = types.ModuleType(loader.name)
+    loader.exec_module(mod)
+    f = getattr(mod, function_name)
+    if inspect.iscoroutinefunction(f):
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(f())
+        loop.run_until_complete(asyncio.sleep(3))  # some time for things to cleanup like connections
+        loop.close()
+    else:
+        f()
+    return True
 
 
 class NodeConfig:
@@ -57,15 +97,59 @@ class ProcessType(IntEnum):
     PROCESSOR = 3  # a launched processor
 
 
+class InstanceType(IntEnum):
+    PROCESS = 1
+    SUB_PROCESS = 2
+
+
 class ProcessorInstance:
-    def __init__(self, proc, process, instance_id: int):
+    colors = [(Fore.WHITE, Back.BLACK), (Fore.RED, Back.GREEN), (Fore.BLUE, Back.WHITE), (Fore.BLACK, Back.WHITE),
+              (Fore.RED, Back.WHITE),
+              ]
+    next_color_index = 0
+
+    def __init__(self, proc, process, instance_id: int, instance_type=InstanceType.SUB_PROCESS, proc_stdout=None):
         self.proc = proc
         self.process = process
         self.instance_id = instance_id
+        self.instance_type = instance_type
+        self.stdout = proc_stdout
+        self.color_index = ProcessorInstance.next_color_index
+        ProcessorInstance.next_color_index += 1
+        if ProcessorInstance.next_color_index >= len(self.colors):
+            ProcessorInstance.next_color_index = 0
+
+    @property
+    def color(self):
+        return self.colors[self.color_index]
 
     @property
     def name(self):
         return self.proc.name
+
+    @property
+    def exit_code(self):
+        if self.instance_type == InstanceType.SUB_PROCESS:
+            return self.process.poll()
+        if self.instance_type == InstanceType.PROCESS:
+            return self.process.exitcode
+        return None
+
+    def read_stdout_line(self):
+        if self.instance_type == InstanceType.SUB_PROCESS:
+            line = self.process.stdout.readline()
+            if line:
+                line = line.decode().strip()
+        if self.instance_type == InstanceType.PROCESS:
+            line = self.stdout.get()
+        if not line or line == '\n' or len(line) == 0:
+            return None
+        line = f"{self.name}({self.instance_id})" + self.color[0] + self.color[1] + ">>>" + Style.RESET_ALL + f"{line}"
+        return line
+
+    @property
+    def is_alive(self):
+        return self.exit_code is None
 
     @property
     def api_def(self):
@@ -91,8 +175,21 @@ class ProcessorController:
         interpreter = self.interpreter_path
         if self.proc.interpreter:
             interpreter = self.proc.interpreter
-        process = subprocess.Popen([interpreter, self.proc.entry], stdout=subprocess.PIPE)
-        runner = ProcessorInstance(self.proc, process, new_instance_id)
+        instance_type = InstanceType.SUB_PROCESS
+        if self.proc.function:
+            proc_stdout = StdoutQueue()
+            mod_name = pathlib.Path(self.proc.entry).stem
+            mod_path = self.proc.entry
+            mod_function = self.proc.function
+            process = multiprocessing.Process(name=f"{mod_name}.{mod_function}", target=launch_module,
+                                              args=(mod_name, mod_path, mod_function, proc_stdout))
+            process.daemon = True
+            process.start()
+            instance_type = InstanceType.PROCESS
+        else:
+            process = subprocess.Popen([interpreter, self.proc.entry], stdout=subprocess.PIPE)
+            proc_stdout = process.stdout
+        runner = ProcessorInstance(self.proc, process, new_instance_id, instance_type, proc_stdout)
         self._instances.append(runner)
 
     def _allocate_new_instance_id(self):
@@ -114,8 +211,9 @@ class ProcessorController:
         return self.proc.name
 
 
+# noinspection PyMethodMayBeStatic
 class ComputeNode:
-    NODE_PID_POINTER = 4 #size 4, starts from 4 after server id
+    NODE_PID_POINTER = 4  # size 4, starts from 4 after server id
     config = NodeConfig()
     _instance = None
 
@@ -149,16 +247,29 @@ class ComputeNode:
     async def kill_process(self, pid):
         if pid == 0:
             return
-        p = psutil.Process(pid)
-        p.terminate()  # or p.kill()
+        try:
+            p = psutil.Process(pid)
+            p.terminate()  # or p.kill()
+        except psutil.NoSuchProcess:
+            return
 
     async def kill_server(self):
         print("Closing old server")
-        server_pid = self.mem.read_int(SERVER_PID_POINTER)
+        server_pid = None
+        for process in psutil.process_iter():
+            try:
+                cmdline = process.cmdline()
+                if self.server_path in cmdline:
+                    server_pid = process.pid
+                    break
+            except psutil.AccessDenied:
+                continue
+        # server_pid = self.mem.read_int(SERVER_PID_POINTER)
         return await self.kill_process(server_pid)
 
     async def kill_node(self):
         print("Closing old node")
+        await self.kill_server()
         node_pid = self.mem.read_int(self.NODE_PID_POINTER)
         return await self.kill_process(node_pid)
 
@@ -195,7 +306,8 @@ class ComputeNode:
         else:
             print(f"Starting node:{self.name} by {sys.argv[0]}")
         try:
-            self.mem = SharedMemoryBuffer(node_shared_mem_name, node_shared_mem_size, MEMORY_ALLOCATION_MODE.CREATE_ONLY)
+            self.mem = SharedMemoryBuffer(node_shared_mem_name, node_shared_mem_size,
+                                          MEMORY_ALLOCATION_MODE.CREATE_ONLY)
         except MemoryError:
             self.mem = SharedMemoryBuffer(node_shared_mem_name, node_shared_mem_size,
                                           MEMORY_ALLOCATION_MODE.USE_ONLY)
@@ -244,24 +356,33 @@ class ComputeNode:
             return
 
     async def baby_sitter(self, pipe_complete: asyncio.Future):
+        startup_time = 1
         print("Process monitor on")
+        await asyncio.sleep(startup_time)
         while True:
-            await asyncio.sleep(.1)
+            await asyncio.sleep(1)
+            running_instances = 0
             for proc_name in self.processors:
-                running_instances = 0
                 p = self.processors[proc_name]
                 for i in p.instances:
-                    exit_code = i.process.poll()
+                    if i.is_alive:
+                        running_instances += 1
+                    exit_code = i.exit_code
                     if exit_code is not None:
                         self.handle_instance_exit(exit_code, i)
-                    running_instances += 1
-                    line = i.process.stdout.readline()
-                    if line:
-                        print(f"{i.name}({i.instance_id})>>>{line.decode().strip()}")
+                        continue
+                    for k in range(3):
+                        line = i.read_stdout_line()
+                        if line:
+                            print(line)
+                        else:
+                            break
             if running_instances == 0:
                 print("Pipe completed")
                 pipe_complete.set_result(0)
                 return
+            # print(f"instances:{running_instances}")
+        print("Cleanup ...")
 
     @property
     def api_def(self):
