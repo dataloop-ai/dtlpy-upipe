@@ -12,13 +12,17 @@ import uvicorn
 from starlette import status
 from starlette.requests import Request
 
-from mock.sdk.types import API_Queue, API_Response, API_Proc, UtilizationEntry
+from mock.sdk.types import API_Queue, API_Response, API_Proc, ProcUtilizationEntry, API_Proc_Message, ProcMessageType, \
+    NODE_PROC_NAME
 from mock.sdk.entities.mem_queue import Queue
 from mock.sdk.utils import SharedMemoryBuffer, MEMORY_ALLOCATION_MODE
 
 node_shared_mem_name = "node_status"
 node_shared_mem_size = 100
 SERVER_PID_POINTER = 0  # size 4
+
+server_proc_def = API_Proc(name="server", controller=True)
+node_manager_proc_def = API_Proc(name=NODE_PROC_NAME, controller=True)
 
 
 class NodeServer:
@@ -40,6 +44,7 @@ class ProcessManager:
 
     def __init__(self):
         self.proc_connections: Dict[str, WebSocket] = {}
+        self.procs: Dict[str, API_Proc] = {}
         self.queues_defs: Dict[str, List[API_Queue]] = {}
         self.queues: List[Queue] = [None] * 50  # max Queues
         self.ready = False
@@ -50,20 +55,19 @@ class ProcessManager:
     async def serve(self):
         self.ready = True
 
-    def get_queue_def(self, proc_name: str):
-        q_json = {"type": "q_update", "queues": []}
-        if proc_name not in self.queues_defs:
-            return q_json
-        for q in self.queues_defs[proc_name]:
-            q_json['queues'].append(q.dict())
-        return q_json
+    def get_queue_def_message(self, proc_name: str) -> API_Proc_Message:
+        q_json = {"queues": []}
+        if proc_name in self.queues_defs:
+            for q in self.queues_defs[proc_name]:
+                q_json['queues'].append(q.dict())
+        msg = API_Proc_Message(type=ProcMessageType.Q_UPDATE, dest=proc_name, sender=server_proc_def, body=q_json)
+        return msg
 
     @property
     def node_connection(self):
-        node_proc = "node-main"
-        if node_proc not in self.proc_connections:
+        if NODE_PROC_NAME not in self.proc_connections:
             raise ConnectionError("Missing node connection")
-        return self.proc_connections[node_proc]
+        return self.proc_connections[NODE_PROC_NAME]
 
     async def connect(self, proc_name: str, websocket: WebSocket):
         await websocket.accept()
@@ -72,12 +76,12 @@ class ProcessManager:
     def disconnect(self, proc_name: str, websocket: WebSocket):
         del self.proc_connections[proc_name]
 
-    async def register(self, proc_name: str):
+    async def register(self, proc: API_Proc):
         global controller_proc_name
         if controller_proc_name in self.proc_connections:
-            await self.proc_connections[controller_proc_name].send_json({"type": "register", "proc_name": proc_name})
-        q_defs = self.get_queue_def(proc_name)
-        await self.send_message(proc_name, q_defs)
+            msg = API_Proc_Message(type=ProcMessageType.PROC_REGISTER, dest=node_manager_proc_def,
+                                   sender=server_proc_def)
+            await self.proc_connections[controller_proc_name].send_json(msg.dict())
 
     async def init_q_mem(self, q: API_Queue):
         self.queues[q.q_id] = Queue(**q.dict())
@@ -94,13 +98,13 @@ class ProcessManager:
         if proc_name not in self.queues_defs:
             self.queues_defs[proc_name] = []
         self.queues_defs[proc_name].append(q)
-        q_defs = self.get_queue_def(proc_name)
-        await self.send_message(proc_name, q_defs)
+        q_defs_message = self.get_queue_def_message(proc_name)
+        await self.send_message(q_defs_message)
 
-    async def send_message(self, proc_name: str, message: Dict):
-        if proc_name not in self.proc_connections:
+    async def send_message(self, message: API_Proc_Message):
+        if message.dest not in self.proc_connections:
             return
-        await self.proc_connections[proc_name].send_json(message)
+        await self.proc_connections[message.dest].send_json(message.json())
 
     async def broadcast(self, message: str):
         for connection in self.proc_connections:
@@ -134,17 +138,14 @@ async def ping():
 async def register(proc: API_Proc):
     global controller_proc_name
     if proc.controller:
-        controller_proc_name = proc.name
-        await manager.register(proc.name)
+        await manager.register(proc)
         return API_Response(success=True, data={"messages": []})
     if not manager.ready:
         return API_Response(success=False, code="NOT_READY", message="Server not ready")
-    await manager.register(proc.name)
+    await manager.register(proc)
     response = API_Response(success=True)
-    q_defs = manager.get_queue_def(proc.name)
-    response.data = {"messages": []}
-    if q_defs:
-        response.data["messages"].append(q_defs)
+    q_defs = manager.get_queue_def_message(proc.name)
+    response.messages.append(q_defs)
     return response
 
 
@@ -179,13 +180,11 @@ async def websocket_endpoint(websocket: WebSocket, proc_name: str):
         while True:
             data = await websocket.receive_text()
             try:
-                msg = json.loads(data)
-                if msg['dest'] == 'node-main':
-                    await manager.node_connection.send_json(msg)
-                if msg['type'] == 'intra_proc':
-                    await manager.send_message(msg['dest'], msg)
-                if msg['type'] == 'broadcast':
-                    await manager.broadcast(msg)
+                msg: API_Proc_Message = API_Proc_Message.parse_obj(json.loads(data))
+                if msg.dest == NODE_PROC_NAME:
+                    await manager.node_connection.send_json(msg.json())
+                elif msg.dest in manager.proc_connections:
+                    await manager.send_message(msg)
             except:
                 raise ValueError("Un supported processor message")
     except WebSocketDisconnect:

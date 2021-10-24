@@ -1,8 +1,11 @@
+from enum import IntEnum
+
 from pydantic import BaseModel, typing
 from pydantic.class_validators import Optional
+from pydantic.fields import List
 
 node_server = None
-
+NODE_PROC_NAME = "up_node_manager"
 
 class API_Queue(BaseModel):
     from_p: str
@@ -18,19 +21,24 @@ class API_Proc(BaseModel):
     function: Optional[str]
     interpreter: Optional[str]
     controller: bool
-    autoscale: int
+    autoscale: int = 1
 
 
 class API_Proc_Instance(API_Proc):
     instance_id: int
     pid: int
 
+class ProcMessageType(IntEnum):
+    Q_STATUS = 1
+    Q_UPDATE = 2
+    PROC_REGISTER = 3
+    PROC_TERMINATE = 4
 
 class API_Proc_Message(BaseModel):
     dest: str
-    type: str
-    proc: API_Proc
-    body: dict
+    type: ProcMessageType
+    sender: API_Proc
+    body: Optional[dict]
 
 
 class API_Node(BaseModel):
@@ -42,5 +50,5 @@ class API_Node(BaseModel):
 class API_Response(BaseModel):
     success: bool
     code: Optional[str]
-    message: Optional[str]
+    messages: Optional[List[API_Proc_Message]] = []
     data: Optional[dict]

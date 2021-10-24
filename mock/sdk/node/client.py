@@ -14,7 +14,7 @@ import time
 import httpx
 from aiohttp import FormData, ClientSession
 
-from mock.sdk import API_Proc, API_Response, API_Node, QStatus, API_Proc_Message
+from mock.sdk import API_Proc, API_Response, API_Node, QStatus, API_Proc_Message, ProcMessageType, NODE_PROC_NAME
 
 counter = 0
 
@@ -65,9 +65,9 @@ def retry(times: int, exceptions=()):
                     res = await func(*args, **kwargs)
                     content = API_Response(**await res.json())
                     if content.success:
-                        return content.data or True
+                        return (content.data,content.messages)
                     else:
-                        raise AssertionError(f"Error on {func} : {content.message}")
+                        raise AssertionError(f"Error on {func} : {content.messages}")
                 except exceptions:
                     print(
                         'Exception thrown when attempting to run %s, attempt '
@@ -91,7 +91,7 @@ class NodeClient:
         self.register_timeout = 5
         self.proc_name = proc_name
         self.message_handler = message_handler
-        self.socket = None
+        self.socket: websocket.WebSocketApp = None
         self.connected = False
         self.keep_alive = False
         self.terminate = False  # just before we go ...
@@ -158,17 +158,21 @@ class NodeClient:
             raise TimeoutError("Register Q timeout")
         return False
 
-    async def send_message(self, msg: API_Proc_Message):
+    def send_message(self, msg: API_Proc_Message):
         if not self.socket:
             return
-        await self.socket.send(msg.json())
+        self.socket.send(msg.json())
 
     def handle_message(self, message):
         global counter
         msg = json.loads(message)
-        api_msg = API_Proc_Message.parse_obj(msg)
-        if self.message_handler:
-            self.message_handler(api_msg)
+        try:
+            api_msg = API_Proc_Message.parse_obj(msg)
+            if self.message_handler:
+                self.message_handler(api_msg)
+        except:
+            return
+
 
     async def get_session(self, q):
         if q.host not in self.sessions:
@@ -214,11 +218,12 @@ class NodeClient:
 
     def on_open(self, ws):
         print(f"{self.proc_name} connected")
+        self.socket = ws
         self.connected = True
 
-    async def report_q_status(self, proc: API_Proc, q_status: QStatus):
-        msg = API_Proc_Message(dest="node-main", type="q_status", proc=proc, body={"q_status": q_status.dict()})
-        await self.send_message(msg)
+    def report_q_status(self, proc: API_Proc, q_status: QStatus):
+        msg = API_Proc_Message(dest=NODE_PROC_NAME, type=ProcMessageType.Q_STATUS, sender=proc, body=q_status.dict())
+        self.send_message(msg)
 
     def connect_socket(self):
         websocket.enableTrace(False)
@@ -227,7 +232,6 @@ class NodeClient:
                                     on_message=self.on_message,
                                     on_error=self.on_error,
                                     on_close=self.on_close)
-        self.socket = ws
         ws.run_forever()
 
     async def connect(self, timeout: int = 10):
@@ -235,6 +239,11 @@ class NodeClient:
             return True
         thread = Thread(target=self.connect_socket)
         thread.start()
+        sleep_time = .5
+        while not self.connected:
+            await asyncio.sleep(sleep_time)
+            if self.connected:
+                return True
         # start_time = time.time()
         # sleep_time = .5
         # self.connected = True

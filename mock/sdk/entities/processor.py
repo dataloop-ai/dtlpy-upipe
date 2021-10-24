@@ -2,6 +2,7 @@ import asyncio
 import time
 from enum import IntEnum
 from multiprocessing import shared_memory
+from threading import Thread
 from typing import List, Dict
 
 from aiohttp import ClientConnectorError
@@ -9,7 +10,7 @@ from colorama import init, Fore
 
 import psutil
 
-from mock.sdk import API_Proc, UtilizationEntry, QStatus
+from mock.sdk import API_Proc, ProcUtilizationEntry, QStatus, API_Proc_Message, ProcMessageType
 from .dataframe import DType, DataFrame
 from .mem_queue import Queue
 import sys
@@ -69,6 +70,7 @@ class Processor:
         self.execution_status = ProcessorExecutionStatus.RUNNING
         self.consumer_next_q_index = 0
         self.interpreter = sys.executable
+        self.request_termination = False  # called from manager to notify its over
         # self.smd = shared_memory_dict.SharedMemoryDict(name=name, size=1025)
         atexit.register(self.cleanup)
         processor_memory_name = processor_shared_memory_name(self.api_def)
@@ -106,8 +108,7 @@ class Processor:
         printed = False
         while True:
             try:
-                response_data = await self.node_client.register_proc(self.api_def)
-                messages = response_data['messages']
+                (data, messages) = await self.node_client.register_proc(self.api_def)
                 break
             except ClientConnectorError:
                 if not printed:
@@ -127,16 +128,12 @@ class Processor:
             await self.register()
         if not self.connected:
             self.connected = await self.node_client.connect()
-        if self.connected:
-            asyncio.create_task(self.monitor())
+        thread = Thread(target=self.monitor)
+        thread.start()
 
     def get_child(self, name):
         proc = next((p for p in self.children if p.name == name), None)
         return proc
-
-    async def send_message(self, to_proc_name, body: Dict):
-        msg = {"type": "intra_proc", "dest": to_proc_name, "body": body}
-        return await self.node_client.send_message(msg)
 
     def enum(self):
         self.serial = Processor.next_serial
@@ -153,18 +150,20 @@ class Processor:
             allocated.extend(p.allocate_queues())
         return allocated
 
-    async def report_q_status(self):
+    def report_q_status(self):
         current_time = time.time() * 1000  # ms
         pending = 0
         for q in self.in_qs:
             pending += q.log.pending_stats
         status = QStatus(q_id=q.q_id, pending=pending, time=current_time)
-        await self.node_client.report_q_status(self.api_def, status)
+        self.node_client.report_q_status(self.api_def, status)
 
-    async def monitor(self):
+    def monitor(self):
         while True:
-            await asyncio.sleep(1)
-            await self.report_q_status()
+            time.sleep(1)
+            if not self.connected:
+                continue
+            self.report_q_status()
 
     def all_child_procs(self):
         procs = [self]
@@ -202,26 +201,18 @@ class Processor:
         self.execution_status = ProcessorExecutionStatus.RUNNING
 
     def handle_intra_proc_message(self, msg):
-        if msg['type'] == 'q_pending':
-            pass
-            # loop = asyncio.get_event_loop()
-            # loop.create_task(self.process_in_q())
-
-    def handle_intra_proc_message(self, msg):
         if msg['control'] == 'run':
             self.run()
 
-    def handle_message(self, msg):
-        if 'type' not in msg:
-            raise ValueError
-        if msg['type'] == "q_update":
-            qs = msg["queues"]
+    def handle_message(self, msg: API_Proc_Message):
+        if msg.type == ProcMessageType.Q_UPDATE:
+            print("Q update request")
+            qs = msg.body["queues"]
             for q in qs:
                 self.add_q(q)
-        if msg['type'] == "intra_proc":
-            self.handle_intra_proc_message(msg['body'])
-        if msg['type'] == "broadcast":
-            self.handle_broadcast_message(msg['body'])
+        if msg.type == ProcMessageType.PROC_TERMINATE:
+            print("Termination request")
+            self.request_termination = True
 
     def on_ws_message(self, msg):
         self.handle_message(msg)
@@ -261,6 +252,8 @@ class Processor:
         return await self.emit(data, d_type)
 
     async def get(self):
+        if self.request_termination:
+            raise GeneratorExit("Process terminated by node manager")
         for i in range(len(self.in_qs)):
             next_index = (self.consumer_next_q_index + i) % len(self.in_qs)
             q: Queue = self.in_qs[next_index]
