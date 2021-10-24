@@ -128,7 +128,7 @@ class Processor:
             await self.register()
         if not self.connected:
             self.connected = await self.node_client.connect()
-        thread = Thread(target=self.monitor)
+        thread = Thread(target=self.monitor, daemon=True)
         thread.start()
 
     def get_child(self, name):
@@ -155,8 +155,8 @@ class Processor:
         pending = 0
         for q in self.in_qs:
             pending += q.log.pending_stats
-        status = QStatus(q_id=q.q_id, pending=pending, time=current_time)
-        self.node_client.report_q_status(self.api_def, status)
+            status = QStatus(q_id=q.q_id, pending=pending, time=current_time)
+            self.node_client.report_q_status(self.api_def, status)
 
     def monitor(self):
         while True:

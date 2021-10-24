@@ -237,7 +237,7 @@ class NodeClient:
     async def connect(self, timeout: int = 10):
         if self.socket:
             return True
-        thread = Thread(target=self.connect_socket)
+        thread = Thread(target=self.connect_socket, daemon=True)
         thread.start()
         sleep_time = .5
         while not self.connected:

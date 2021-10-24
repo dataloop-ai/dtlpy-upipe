@@ -17,19 +17,19 @@ from typing import Dict, List
 import importlib
 from mock.sdk import API_Node, API_Proc, ProcUtilizationEntry, QStatus, API_Proc_Message, ProcMessageType, \
     NodeUtilizationEntry, NODE_PROC_NAME
-from .server import node_shared_mem_name, node_shared_mem_size, SERVER_PID_POINTER
+from mock.sdk.node.server import node_shared_mem_name, node_shared_mem_size, SERVER_PID_POINTER
 import sys
 import subprocess
 import os
-from .client import NodeClient
+from mock.sdk.node.client import NodeClient
 
 from configparser import ConfigParser
 import uuid
 import psutil
 
-from ..entities.processor import Processor
-from ..types.descriptors.network import API_Proc_Instance
-from ..utils import processor_shared_memory_name, SharedMemoryBuffer, MEMORY_ALLOCATION_MODE
+from mock.sdk.entities.processor import Processor
+from mock.sdk.types.descriptors.network import API_Proc_Instance
+from mock.sdk.utils import processor_shared_memory_name, SharedMemoryBuffer, MEMORY_ALLOCATION_MODE
 
 config_path = 'config.ini'
 init(autoreset=True)
@@ -124,7 +124,7 @@ class ProcessorInstance:
         ProcessorInstance.next_color_index += 1
         if ProcessorInstance.next_color_index >= len(self.colors):
             ProcessorInstance.next_color_index = 0
-        thread = Thread(target=self.monitor)
+        thread = Thread(target=self.monitor, daemon=True)
         thread.start()
 
     def monitor(self):
@@ -303,7 +303,7 @@ class ComputeNode:
         self.host_name = host_name
         self.node_id = self.config.node_id
         self.my_path = os.path.dirname(os.path.abspath(__file__))
-        self.server_path = os.path.join(self.my_path, "server", "server.py")
+        self.server_path = os.path.join(self.my_path, "../server", "server.py")
         self.interpreter_path = sys.executable
         self.node_controller = False
         self.mem = None
@@ -435,7 +435,7 @@ class ComputeNode:
         weights = [10 * (i+1) for i in range(len(self.node_usage_history))]
         cpu = int(np.ma.average([u.cpu for u in self.node_usage_history], weights=weights))
         memory = int(np.ma.average([u.memory for u in self.node_usage_history], weights=weights))
-        print(Fore.GREEN + f"CPU:{cpu}%, MEM:{memory}%")
+        # print(Fore.GREEN + f"CPU:{cpu}%, MEM:{memory}%")
         if cpu > 85:
             return True
         if memory > 85:

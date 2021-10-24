@@ -17,7 +17,7 @@ node_manager_proc_def = API_Proc(name=NODE_PROC_NAME, controller=True)
 
 class ProcessManager:
     USAGE_HISTORY_LIMIT = 100
-    SERVER_PID_POINTER = 0  # size 4, defined also in node.py
+    SERVER_PID_POINTER = 0  # size 4, defined also in main.py
 
     def __init__(self, controller_proc_name):
         self.controller_proc_name = controller_proc_name

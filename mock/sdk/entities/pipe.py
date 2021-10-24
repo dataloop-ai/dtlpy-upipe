@@ -3,8 +3,7 @@ import asyncio
 from typing import Dict
 
 from .processor import Processor
-from .. import API_Proc
-from ..node.node import ComputeNode
+from mock.sdk.node.manager.main import ComputeNode
 
 control_mem_name = "control_mem"
 
