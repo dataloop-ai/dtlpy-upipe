@@ -10,7 +10,7 @@ from io import StringIO
 from multiprocessing.queues import Queue
 from typing import Dict, List
 import importlib
-from mock.sdk import API_Node, API_Proc
+from mock.sdk import API_Node, API_Proc, UtilizationEntry, QStatus
 from .server import node_shared_mem_name, node_shared_mem_size, SERVER_PID_POINTER
 import sys
 import subprocess
@@ -232,6 +232,7 @@ class ComputeNode:
         self.name = name
         if not port:
             port = 852
+        self.usage_history: List[UtilizationEntry] = []
         self.port = port
         self.host_name = host_name
         self.node_id = self.config.node_id
@@ -241,8 +242,11 @@ class ComputeNode:
         self.node_controller = False
         self.mem = None
         self.server_process = None
-        self.node_client = NodeClient("node-main")
+        self.node_client = NodeClient("node-main", self.on_ws_message)
         self.processors: Dict[str, ProcessorController] = {}
+
+    def on_ws_message(self, msg):
+        pass
 
     async def kill_process(self, pid):
         if pid == 0:
@@ -250,7 +254,7 @@ class ComputeNode:
         try:
             p = psutil.Process(pid)
             p.terminate()  # or p.kill()
-        except psutil.NoSuchProcess:
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
             return
 
     async def kill_server(self):
@@ -295,6 +299,7 @@ class ComputeNode:
         if not await self.serve():
             print("No serving node, exit")
             sys.exit(-1)
+        await self.node_client.connect()
 
     # noinspection PyBroadException
     async def init(self, name=None):
@@ -314,13 +319,59 @@ class ComputeNode:
             await self.kill_node()
         await self.init_node()
 
+    async def report_hw_metrics(self):
+        cpu = psutil.cpu_percent()
+        memory = psutil.virtual_memory().percent
+        usage = UtilizationEntry(cpu=cpu, memory=memory)
+        self.usage_history.append(usage)
+        if len(self.usage_history) > self.USAGE_HISTORY_LIMIT:
+            del self.usage_history[0]
+
+    async def report_utilization(self, proc: API_Proc):
+        cpu = psutil.cpu_percent()
+        memory = psutil.virtual_memory().percent
+        usage = UtilizationEntry(cpu=cpu, memory=memory)
+        self.usage_history.append(usage)
+        if len(self.usage_history) > self.USAGE_HISTORY_LIMIT:
+            del self.usage_history[0]
+
+    async def report_q_utilization(self, proc: API_Proc, status: QStatus):
+        cpu = psutil.cpu_percent()
+        memory = psutil.virtual_memory().percent
+        usage = UtilizationEntry(cpu=cpu, memory=memory)
+        self.usage_history.append(usage)
+        if len(self.usage_history) > self.USAGE_HISTORY_LIMIT:
+            del self.usage_history[0]
+
+    async def auto_scale_required(self):
+        cpu = 0
+        memory = 0
+        for u in self.usage_history:
+            cpu += u.cpu
+            memory += u.memory
+        cpu /= len(self.usage_history)
+        memory /= len(self.usage_history)
+        if cpu < 85:
+            return True
+        return False
+
+    async def auto_scale(self):
+        q_to_scale = self.get_most_busy_q()
+        if not q_to_scale:
+            return
+        proc_to_scale = q_to_scale.to_p
+        if proc_to_scale not in self.proc_connections:
+            return
+        proc_connection = self.proc_connections[proc_to_scale]
+        proc_connection.send_json()
+
     async def register_proc(self, proc: API_Proc):
         messages = await self.node_client.register_proc(proc)
         self.processors[proc.name] = ProcessorController(proc)
         return messages
 
     async def register(self):
-        registered = await self.node_client.register_node(self.api_def, self.on_ws_message)
+        registered = await self.node_client.register_node(self.api_def)
         return registered
 
     async def serve(self):
@@ -381,7 +432,9 @@ class ComputeNode:
                 print("Pipe completed")
                 pipe_complete.set_result(0)
                 return
-            # print(f"instances:{running_instances}")
+            # await self.report_hw_metrics()
+            # if await self.auto_scale_required():
+            #    await self.auto_scale()
         print("Cleanup ...")
 
     @property

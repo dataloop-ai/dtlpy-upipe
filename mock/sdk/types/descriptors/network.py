@@ -18,15 +18,26 @@ class API_Proc(BaseModel):
     function: Optional[str]
     interpreter: Optional[str]
     controller: bool
+    autoscale: int
+
 
 class API_Proc_Instance(API_Proc):
     instance_id: int
     pid: int
 
+
+class API_Proc_Message(BaseModel):
+    dest: str
+    type: str
+    proc: API_Proc
+    body: dict
+
+
 class API_Node(BaseModel):
     name: str
     host_name: str
     id: str
+
 
 class API_Response(BaseModel):
     success: bool

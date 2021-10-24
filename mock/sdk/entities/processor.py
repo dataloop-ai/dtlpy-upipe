@@ -9,7 +9,7 @@ from colorama import init, Fore
 
 import psutil
 
-from mock.sdk import API_Proc
+from mock.sdk import API_Proc, UtilizationEntry, QStatus
 from .dataframe import DType, DataFrame
 from .mem_queue import Queue
 import sys
@@ -37,7 +37,7 @@ class Processor:
     out_qs: List[Queue]
     SHARED_MEM_SIZE = 64
 
-    def __init__(self, name=None, entry=None, func=None, host=None,
+    def __init__(self, name=None, entry=None, func=None, host=None, autoscale=1,
                  input_buffer_size=1000 * 4096):  # name is unique per pipe
         if not name:
             name = sys.argv[0]
@@ -53,11 +53,12 @@ class Processor:
         self.proc = None
         self.entry = entry
         self.function = None
+        self.autoscale = autoscale
         if callable(func):
             self.function = func.__name__
             if entry:
                 raise ChildProcessError("function can not be used with entry")
-            self.entry = os.path.abspath(sys.modules['__main__'].__file__) #main file
+            self.entry = os.path.abspath(sys.modules['__main__'].__file__)  # main file
         self.on_frame_callback = None
         self.name = name
         self.children = list()
@@ -126,6 +127,8 @@ class Processor:
             await self.register()
         if not self.connected:
             self.connected = await self.node_client.connect()
+        if self.connected:
+            asyncio.create_task(self.monitor())
 
     def get_child(self, name):
         proc = next((p for p in self.children if p.name == name), None)
@@ -150,20 +153,18 @@ class Processor:
             allocated.extend(p.allocate_queues())
         return allocated
 
-    async def report_hw_metrics(self):
-        pid = os.getpid()
-        python_process = psutil.Process(pid)
-        pass
+    async def report_q_status(self):
+        current_time = time.time() * 1000  # ms
+        pending = 0
+        for q in self.in_qs:
+            pending += q.log.pending_stats
+        status = QStatus(q_id=q.q_id, pending=pending, time=current_time)
+        await self.node_client.report_q_status(self.api_def, status)
 
     async def monitor(self):
         while True:
-            # if self.execution_status == ProcessorExecutionStatus.RUNNING:
-            #     await self.process_in_q()
-            #     await asyncio.sleep(.1)
-            # else:
-            #     await asyncio.sleep(.5)
             await asyncio.sleep(1)
-            await self.report_hw_metrics()
+            await self.report_q_status()
 
     def all_child_procs(self):
         procs = [self]
@@ -288,5 +289,4 @@ class Processor:
     @property
     def api_def(self):
         return API_Proc(name=self.name, entry=self.entry, function=self.function, interpreter=self.interpreter,
-                        pid=self.pid,
-                        controller=self.controller)
+                        pid=self.pid, controller=self.controller, autoscale=self.autoscale)

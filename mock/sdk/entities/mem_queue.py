@@ -1,5 +1,6 @@
 import binascii
 import os
+import numpy as np
 import time
 from enum import IntEnum
 from multiprocessing import shared_memory
@@ -36,8 +37,8 @@ class QLogEntry(BaseModel):
 
 class QActionLog:
     def __init__(self, entry_limit=60):
-        self._enqueue_log = []
-        self._dequque_log = []
+        self._enqueue_log: list[QLogEntry] = []
+        self._dequque_log: list[QLogEntry] = []
         self.entry_limit = entry_limit
 
     def add_to_log(self, entry: QLogEntry, log: list):
@@ -50,6 +51,12 @@ class QActionLog:
 
     def log_dequeue(self, entry: QLogEntry):
         self.add_to_log(entry, self._dequque_log)
+
+    @property
+    def pending_stats(self):
+        if len(self._dequque_log) == 0:
+            return 0
+        return int(np.mean([d.pending_counter for d in self._dequque_log]))
 
 
 def current_milli_time():
@@ -202,7 +209,7 @@ class Queue:
             frame_data_size = frame_size - self.FRAME_HEADER_SIZE
             frame_counter = int.from_bytes(frame_header[self.FRAME_NUM_OFFSET:self.FRAME_NUM_OFFSET + 4], "little")
             # log
-            self.log_enqueque(
+            self.log_dequeue(
                 QLogEntry(frame_counter=frame_counter, alloc_index=self.alloc_index, exe_index=self.exe_index,
                           alloc_counter=self.alloc_counter, exe_counter=self.exe_counter,
                           pending_counter=self.pending_counter, free_space=self.free_space, capacity=capacity,

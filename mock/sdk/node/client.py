@@ -1,17 +1,20 @@
+import _thread
 import asyncio
 import json
 import pickle
 import platform
+from threading import Thread
 from typing import Dict
 
 import aiohttp
+import websocket
 import websockets
 import websockets.exceptions
 import time
 import httpx
 from aiohttp import FormData, ClientSession
 
-from mock.sdk import API_Proc, API_Response, API_Node
+from mock.sdk import API_Proc, API_Response, API_Node, QStatus, API_Proc_Message
 
 counter = 0
 
@@ -62,7 +65,7 @@ def retry(times: int, exceptions=()):
                     res = await func(*args, **kwargs)
                     content = API_Response(**await res.json())
                     if content.success:
-                        return content.data
+                        return content.data or True
                     else:
                         raise AssertionError(f"Error on {func} : {content.message}")
                 except exceptions:
@@ -84,10 +87,10 @@ class NodeClient:
     sessions: Dict[str, ClientSession] = {}
     _server_session: ClientSession = None
 
-    def __init__(self, proc_name):
+    def __init__(self, proc_name, message_handler=None):
         self.register_timeout = 5
         self.proc_name = proc_name
-        self.message_handler = None
+        self.message_handler = message_handler
         self.socket = None
         self.connected = False
         self.keep_alive = False
@@ -131,26 +134,10 @@ class NodeClient:
         register_url = f"http://{host}/register_node"
         return await self.server_session.post(register_url, json=node.dict())
 
-    async def serve(self, ):
+    @retry(times=3)
+    async def serve(self):
         serve_url = f"http://{host}/serve"
-        ready = False
-        timer = 0
-        while not ready:
-            try:
-                r = httpx.get(serve_url)
-                if r.status_code == 200:
-                    res = r.json()
-                    if res['Success']:
-                        return True
-                time.sleep(1)
-                timer += 1
-                if timer > self.register_timeout:
-                    break
-            except httpx.TimeoutException:
-                print(f"register timeout for {self.proc_name}")
-        if not ready:
-            raise TimeoutError("Register timeout")
-        return False
+        return await self.server_session.get(serve_url)
 
     async def register_queue(self, q):
         register_url = f"http://{host}/register_q"
@@ -171,16 +158,17 @@ class NodeClient:
             raise TimeoutError("Register Q timeout")
         return False
 
-    async def send_message(self, msg):
+    async def send_message(self, msg: API_Proc_Message):
         if not self.socket:
             return
-        await self.socket.send(json.dumps(msg))
+        await self.socket.send(msg.json())
 
     def handle_message(self, message):
         global counter
         msg = json.loads(message)
+        api_msg = API_Proc_Message.parse_obj(msg)
         if self.message_handler:
-            self.message_handler(msg)
+            self.message_handler(api_msg)
 
     async def get_session(self, q):
         if q.host not in self.sessions:
@@ -215,54 +203,48 @@ class NodeClient:
     def ws_url(self):
         return f"ws://{host}/ws/connect/{self.proc_name}"
 
-    async def keep_connection_alive(self):
-        while True:
-            if self.terminate:
-                break
-            if not self.connected:
-                try:
-                    self.socket = await websockets.connect(self.ws_url)
-                    self.connected = True
-                    break
-                except asyncio.exceptions.TimeoutError:
-                    pass
-            try:
-                await asyncio.sleep(5)
-            except RuntimeError:  # sub process no event loop for sleep,RuntimeError('Event loop is closed')
-                return
+    def on_message(self, ws, message):
+        self.handle_message(message)
 
-    async def _process(self):
-        while True:
-            try:
-                if not self.socket:
-                    await asyncio.sleep(2)
-                    continue
-                message = await self.socket.recv()
-                self.handle_message(message)
+    def on_error(self, ws, error):
+        print(error)
 
-            except websockets.exceptions.ConnectionClosed:
-                print('ConnectionClosed')
-                self.connected = False
-                break
+    def on_close(self, ws, close_status_code, close_msg):
+        print("### closed ###")
+
+    def on_open(self, ws):
+        print(f"{self.proc_name} connected")
+        self.connected = True
+
+    async def report_q_status(self, proc: API_Proc, q_status: QStatus):
+        msg = API_Proc_Message(dest="node-main", type="q_status", proc=proc, body={"q_status": q_status.dict()})
+        await self.send_message(msg)
+
+    def connect_socket(self):
+        websocket.enableTrace(False)
+        ws = websocket.WebSocketApp(self.ws_url,
+                                    on_open=self.on_open,
+                                    on_message=self.on_message,
+                                    on_error=self.on_error,
+                                    on_close=self.on_close)
+        self.socket = ws
+        ws.run_forever()
 
     async def connect(self, timeout: int = 10):
-        if self.connected:
+        if self.socket:
             return True
-        if not self.keep_alive:
-            loop = asyncio.get_event_loop()
-            # loop.create_task(self.keep_connection_alive())
-            loop.create_task(self._process())
-            self.keep_alive = True
-        start_time = time.time()
-        sleep_time = .5
-        self.connected = True
-        while True:
-            if self.connected:
-                return True
-            elapsed = start_time - time.time()
-            if elapsed > timeout:
-                raise TimeoutError(f"connect timeout {elapsed} sec")
-            await asyncio.sleep(sleep_time)
+        thread = Thread(target=self.connect_socket)
+        thread.start()
+        # start_time = time.time()
+        # sleep_time = .5
+        # self.connected = True
+        # while True:
+        #     if self.connected:
+        #         return True
+        #     elapsed = start_time - time.time()
+        #     if elapsed > timeout:
+        #         raise TimeoutError(f"connect timeout {elapsed} sec")
+        #     await asyncio.sleep(sleep_time)
 
 
 if __name__ == "__main__":
