@@ -26,7 +26,7 @@ class API_Proc(BaseModel):
 
 class API_Proc_Instance(API_Proc):
     instance_id: int
-    pid: int
+    pid: Optional[int]
 
 class ProcMessageType(IntEnum):
     Q_STATUS = 1
