@@ -252,6 +252,7 @@ class Processor:
         return await self.emit(data, d_type)
 
     async def get(self):
+        sys.stdout.flush()
         if self.request_termination:
             raise GeneratorExit("Process terminated by node manager")
         for i in range(len(self.in_qs)):

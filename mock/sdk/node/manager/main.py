@@ -108,8 +108,15 @@ class InstanceType(IntEnum):
     SUB_PROCESS = 2
 
 
+class InstanceState(IntEnum):
+    READY = 0
+    LAUNCHED = 1
+    RUNNING = 2
+    DONE = 2
+
+
 class ProcessorInstance:
-    colors = [(Fore.WHITE, Back.BLACK), (Fore.RED, Back.GREEN), (Fore.BLUE, Back.WHITE), (Fore.BLACK, Back.WHITE),
+    colors = [(Fore.WHITE, Back.BLACK), (Fore.RED, Back.GREEN), (Fore.BLUE, Back.WHITE), (Fore.BLACK, Back.BLUE),
               (Fore.RED, Back.WHITE),
               ]
     next_color_index = 0
@@ -121,18 +128,28 @@ class ProcessorInstance:
         self.instance_type = instance_type
         self.stdout_q = stdout_q
         self.color_index = ProcessorInstance.next_color_index
+        self.state = InstanceState.LAUNCHED
         ProcessorInstance.next_color_index += 1
         if ProcessorInstance.next_color_index >= len(self.colors):
             ProcessorInstance.next_color_index = 0
         thread = Thread(target=self.monitor, daemon=True)
         thread.start()
 
+    def handle_exit(self):
+        if self.instance_type == InstanceType.SUB_PROCESS:
+            lines = self.process.stdout.readlines()
+            for line in lines:
+                self.stdout_q.write(line)
+        self.state = InstanceState.DONE
+
     def monitor(self):
         while True:
-            if not self.is_alive:
+            if self.exit_code is not None:
+                self.handle_exit()
                 break
             if self.instance_type == InstanceType.SUB_PROCESS:
-                self.stdout_q.write(self.process.stdout.readline())
+                if self.process.stdout:
+                    self.stdout_q.write(self.process.stdout.readline())
             time.sleep(1)
 
     @property
@@ -145,14 +162,19 @@ class ProcessorInstance:
 
     @property
     def cpu(self):
-        p = psutil.Process(self.process.pid)
-        return p.cpu_percent()
+        try:
+            p = psutil.Process(self.process.pid)
+            return p.cpu_percent()
+        except psutil.NoSuchProcess:
+            return 0
 
     @property
     def memory(self):
-        process = psutil.Process(self.process.pid)
-        mem = process.memory_percent()
-        return mem
+        try:
+            p = psutil.Process(self.process.pid)
+            return p.memory_percent()
+        except psutil.NoSuchProcess:
+            return 0
 
     @property
     def exit_code(self):
@@ -175,8 +197,8 @@ class ProcessorInstance:
         return line
 
     @property
-    def is_alive(self):
-        return self.exit_code is None
+    def is_done(self):
+        return self.state == InstanceState.DONE
 
     @property
     def api_def(self):
@@ -193,9 +215,13 @@ class ProcessorController:
         self._q_usage_log: Dict[str, list[QStatus]] = {}
         self._q_usage_log_size = 50
         self._interpreter_path = sys.executable
+        self._completed = False
         processor_memory_name = processor_shared_memory_name(proc)
         size = Processor.SHARED_MEM_SIZE
         self._control_mem = SharedMemoryBuffer(processor_memory_name, size, MEMORY_ALLOCATION_MODE.USE_ONLY)
+
+    def on_complete(self, with_errors):
+        self._completed = True
 
     def launch_instance(self):
         if not self.proc.entry:
@@ -264,6 +290,8 @@ class ProcessorController:
 
     @property
     def available_instances(self):
+        if self._completed:
+            return 0
         if not self.executable:
             return 0
         allowed = self.proc.autoscale - len(self._instances)
@@ -432,26 +460,26 @@ class ComputeNode:
         time_since_last_autoscale = time.time() - self.last_scale_time
         if time_since_last_autoscale < self.scale_block_time:
             return False
-        weights = [10 * (i+1) for i in range(len(self.node_usage_history))]
+        weights = [10 * (i + 1) for i in range(len(self.node_usage_history))]
         cpu = int(np.ma.average([u.cpu for u in self.node_usage_history], weights=weights))
         memory = int(np.ma.average([u.memory for u in self.node_usage_history], weights=weights))
         # print(Fore.GREEN + f"CPU:{cpu}%, MEM:{memory}%")
-        if cpu > 85:
+        if cpu > 90:
             return True
-        if memory > 85:
+        if memory > 90:
             return True
 
     def is_scale_up_possible(self):
         time_since_last_autoscale = time.time() - self.last_scale_time
         if time_since_last_autoscale < self.scale_block_time:
             return False
-        weights = [10 * (i+1) for i in range(len(self.node_usage_history))]
+        weights = [10 * (i + 1) for i in range(len(self.node_usage_history))]
         cpu = int(np.ma.average([u.cpu for u in self.node_usage_history], weights=weights))
         memory = int(np.ma.average([u.memory for u in self.node_usage_history], weights=weights))
         # cpu = int(np.mean([u.cpu for u in self.node_usage_history]))
         # memory = int(np.mean([u.cpu for u in self.node_usage_history]))
         print(Fore.GREEN + f"CPU:{cpu}%, MEM:{memory}%")
-        if cpu > 85:
+        if cpu > 70:
             return False
         if memory > 85:
             return False
@@ -488,15 +516,16 @@ class ComputeNode:
 
     def scale_up(self):
         processor_to_scale: ProcessorController = self.get_processor_to_scale_up()
-        print(f"scaling up:{processor_to_scale.name}")
+        print(Fore.BLUE + f"scaling up:{processor_to_scale.name}")
         processor_to_scale.launch_instance()
         self.last_scale_time = time.time()
 
     def scale_down(self):
         processor_to_scale: ProcessorController = self.get_processor_to_scale_down()
-        print(f"scaling down:{processor_to_scale.name}")
+        print(Fore.BLUE + f"scaling down:{processor_to_scale.name}")
         termination_message = API_Proc_Message(sender=self.node_proc_def, type=ProcMessageType.PROC_TERMINATE,
                                                dest=processor_to_scale.proc.name)
+
         self.node_client.send_message(termination_message)
         self.last_scale_time = time.time()
 
@@ -535,11 +564,17 @@ class ComputeNode:
         p = self.processors[instance.name]
         p.instances.remove(instance)
 
-    def handle_instance_exit(self, code, instance: ProcessorInstance):
-        if code == 0:
+    def handle_instance_exit(self, instance: ProcessorInstance):
+        p = self.processors[instance.name]
+
+        if instance.exit_code == 0:
             print(f"{instance.name}({instance.instance_id}) >> ************Completed**************")
+            p.on_complete(False)
             self.remove_instance(instance)
-            return
+        else:
+            print(f"{instance.name}({instance.instance_id}) >> >>>>>>Completed with errors<<<<<<<<")
+            p.on_complete(True)
+        return
 
     async def baby_sitter(self, pipe_complete: asyncio.Future):
         startup_time = 1
@@ -551,12 +586,14 @@ class ComputeNode:
             for proc_name in self.processors:
                 p = self.processors[proc_name]
                 for i in p.instances:
-                    if i.is_alive:
-                        running_instances += 1
-                    exit_code = i.exit_code
-                    if exit_code is not None:
-                        self.handle_instance_exit(exit_code, i)
+                    if i.is_done:
+                        line = i.read_stdout_line()
+                        while line:
+                            print(line)
+                            line = i.read_stdout_line()
+                        self.handle_instance_exit(i)
                         continue
+                    running_instances += 1
                     for k in range(3):
                         line = i.read_stdout_line()
                         if line:
@@ -572,8 +609,9 @@ class ComputeNode:
                 self.scale_up()
             elif self.is_scale_down_required():
                 self.scale_down()
-        print("Cleanup ...")
+        print(Fore.CYAN + Back.GREEN + "Pipe cleanup ...")
 
-    @property
-    def api_def(self):
-        return API_Node(name=self.name, host_name=self.host_name)
+
+@property
+def api_def(self):
+    return API_Node(name=self.name, host_name=self.host_name)

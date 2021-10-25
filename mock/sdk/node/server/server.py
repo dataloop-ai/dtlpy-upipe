@@ -10,7 +10,7 @@ from starlette import status
 from starlette.requests import Request
 
 from mock.sdk.node.server import ProcessManager
-from mock.sdk.types import API_Queue, API_Response, API_Proc, API_Proc_Message, NODE_PROC_NAME
+from mock.sdk.types import API_Queue, API_Response, API_Proc, API_Proc_Message, NODE_PROC_NAME, ProcMessageType
 
 # noinspection PyTypeChecker
 manager: ProcessManager = None  # set on startup
@@ -83,6 +83,8 @@ async def websocket_endpoint(websocket: WebSocket, proc_name: str):
             data = await websocket.receive_text()
             try:
                 msg: API_Proc_Message = API_Proc_Message.parse_obj(json.loads(data))
+                if msg.type == ProcMessageType.PROC_TERMINATE:
+                    pass
                 if msg.dest == NODE_PROC_NAME:
                     await manager.node_connection.send_json(msg.json())
                 elif msg.dest in manager.proc_connections:
