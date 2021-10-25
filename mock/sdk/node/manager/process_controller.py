@@ -1,0 +1,152 @@
+import asyncio
+import importlib
+import inspect
+import multiprocessing
+import pathlib
+import subprocess
+import sys
+import types
+from enum import IntEnum
+from multiprocessing.queues import Queue
+from typing import Dict, List
+import numpy as np
+from mock.sdk import QStatus, API_Proc
+from mock.sdk.entities import Processor
+from mock.sdk.utils import processor_shared_memory_name, SharedMemoryBuffer, MEMORY_ALLOCATION_MODE
+from .processor_instance import InstanceType, ProcessorInstance
+
+
+# This is a Queue that behaves like stdout
+class StdoutQueue(Queue):
+    def __init__(self, *args, **kwargs):
+        ctx = multiprocessing.get_context()
+        super(StdoutQueue, self).__init__(*args, **kwargs, ctx=ctx)
+
+    def write(self, msg):
+        self.put(msg)
+
+    @staticmethod
+    def flush():
+        sys.__stdout__.flush()
+
+
+def launch_module(mode_name, mod_path, function_name, proc_stdout):
+    old_stdout = sys.stdout
+    sys.stdout = proc_stdout
+    loader = importlib.machinery.SourceFileLoader(mode_name, mod_path)
+    mod = types.ModuleType(loader.name)
+    loader.exec_module(mod)
+    f = getattr(mod, function_name)
+    if inspect.iscoroutinefunction(f):
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(f())
+        loop.run_until_complete(asyncio.sleep(3))  # some time for things to cleanup like connections
+        loop.close()
+    else:
+        f()
+    return True
+
+
+class ProcessType(IntEnum):
+    MAIN = 1  # the process started the whole thing, usually pipeline script
+    NODE_LOCAL_SERVER = 2  # the node server
+    PROCESSOR = 3  # a launched processor
+
+
+class ProcessorController:
+    ALIVE_POINTER = 0  # size 1
+    LAST_INSTANCE_ID_POINTER = 1  # size 4
+
+    def __init__(self, proc: API_Proc):
+        self.proc = proc
+        self._instances = []
+        self._q_usage_log: Dict[str, List[QStatus]] = {}
+        self._q_usage_log_size = 50
+        self._interpreter_path = sys.executable
+        self._completed = False
+        processor_memory_name = processor_shared_memory_name(proc)
+        size = Processor.SHARED_MEM_SIZE
+        self._control_mem = SharedMemoryBuffer(processor_memory_name, size, MEMORY_ALLOCATION_MODE.USE_ONLY)
+
+    def on_complete(self, with_errors):
+        self._completed = True
+
+    def launch_instance(self):
+        if not self.proc.entry:
+            raise EnvironmentError("Can not launch processor with no entry point")
+        new_instance_id = self._allocate_new_instance_id()
+        interpreter = self._interpreter_path
+        if self.proc.interpreter:
+            interpreter = self.proc.interpreter
+        instance_type = InstanceType.SUB_PROCESS
+        stdout_q = StdoutQueue()
+        if self.proc.function:
+            mod_name = pathlib.Path(self.proc.entry).stem
+            mod_path = self.proc.entry
+            mod_function = self.proc.function
+            process = multiprocessing.Process(name=f"{mod_name}.{mod_function}", target=launch_module,
+                                              args=(mod_name, mod_path, mod_function, stdout_q))
+            process.daemon = True
+            process.start()
+            instance_type = InstanceType.PROCESS
+        else:
+            process = subprocess.Popen([interpreter, self.proc.entry], stdout=subprocess.PIPE)
+        runner = ProcessorInstance(self.proc, process, new_instance_id, instance_type, stdout_q)
+        self._instances.append(runner)
+
+    def log_q_usage(self, status: QStatus):
+        if status.q_id not in self._q_usage_log:
+            self._q_usage_log[status.q_id] = []
+        log = self._q_usage_log[status.q_id]
+        log.append(status)
+        while len(log) > self._q_usage_log_size:
+            del log[0]
+
+    def _allocate_new_instance_id(self):
+        last_instance_id = self._control_mem.read_int(self.LAST_INSTANCE_ID_POINTER)
+        new_instance_id = last_instance_id + 1
+        self._control_mem.write_int(self.LAST_INSTANCE_ID_POINTER, new_instance_id)
+        return new_instance_id
+
+    @property
+    def executable(self):
+        return self.proc.entry is not None
+
+    @property
+    def instances(self):
+        return self._instances
+
+    @property
+    def name(self):
+        return self.proc.name
+
+    @property
+    def cpu(self):
+        return sum([i.cpu for i in self._instances])
+
+    @property
+    def memory(self):
+        return sum([i.memory for i in self._instances])
+
+    @property
+    def pending(self):
+        pending = 0
+        for q_id in self._q_usage_log:
+            log = self._q_usage_log[q_id]
+            pending += int(np.mean([d.pending for d in log]))
+        return pending
+
+    @property
+    def available_instances(self):
+        if self._completed:
+            return 0
+        if not self.executable:
+            return 0
+        allowed = self.proc.autoscale - len(self._instances)
+        if allowed < 0:
+            raise EnvironmentError(f"Processor over scaled:f{self.proc.name}")
+        return allowed
+
+    @property
+    def instances_number(self):
+        return len(self._instances)
