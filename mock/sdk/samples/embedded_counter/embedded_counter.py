@@ -27,8 +27,6 @@ async def processor_b():
     print("Hello embedded processor b")
     proc = Processor("b")
     await proc.connect()
-
-    proc.start()
     counter = 0
     while True:
         try:
@@ -40,6 +38,7 @@ async def processor_b():
             break
         if counter % 1000 == 0:
             print(f"{counter / 1000}K")
+    print("embedded processor b completed")
 
 
 async def main():

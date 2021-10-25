@@ -1,25 +1,20 @@
 import asyncio
+import atexit
+import os
+import sys
 import time
 from enum import IntEnum
 from multiprocessing import shared_memory
 from threading import Thread
-from typing import List, Dict
+from typing import List
 
 from aiohttp import ClientConnectorError
 from colorama import init, Fore
 
-import psutil
-
-from mock.sdk import API_Proc, ProcUtilizationEntry, QStatus, API_Proc_Message, ProcMessageType
+import mock.sdk.node.client as client
+from mock.sdk import API_Proc, QStatus, API_Proc_Message, ProcMessageType
 from .dataframe import DType, DataFrame
 from .mem_queue import Queue
-import sys
-import subprocess
-
-import os
-import mock.sdk.node.client as client
-import atexit
-
 from ..utils import processor_shared_memory_name
 
 init(autoreset=True)
@@ -181,10 +176,6 @@ class Processor:
             me = 1
         return me + sum([p.count for p in self.children])
 
-    def on_frame(self, on_frame):
-        sys.exit("Or, on frame is not supported anymore, use get or get_sync")
-        self.on_frame_callback = on_frame
-
     def get_q(self, q_id, in_q=True):
         qs = self.in_qs
         if not in_q:
@@ -255,6 +246,7 @@ class Processor:
         return await self.emit(data, d_type)
 
     async def get(self):
+        sys.stdout.flush()
         if self.request_termination:
             raise GeneratorExit("Process terminated by node manager")
         for i in range(len(self.in_qs)):
