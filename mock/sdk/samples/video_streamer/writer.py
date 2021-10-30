@@ -1,6 +1,6 @@
 import asyncio
 import cv2
-from mock.sdk.entities import Queue, Processor
+from mock.sdk.entities import MemQueue, Processor
 import time
 
 from mock.sdk import DataFrame
@@ -18,8 +18,18 @@ async def main():
     print("Hello writer")
     proc = Processor("writer")
     await proc.connect()
+    frame_cnt = 0
+    while True:
+        if frame_cnt == 400:
+            break
+        display_frame = await proc.get_sync()
+        if display_frame is None:
+            break
+            on_frame(display_frame)
+        frame_cnt += 1
+    print("Display done")
     proc.on_frame(on_frame)
-    proc.start()
+
 
 
 if __name__ == "__main__":

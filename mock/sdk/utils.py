@@ -51,6 +51,22 @@ class SharedMemoryBuffer:
     def write_int(self, address, value: int, size=4):
         self.buffer[address:address + size] = value.to_bytes(size, "little")
 
+    def read_str(self, address, limit=1):
+        b_array = self.buffer[address:address + limit].tobytes()
+        return b_array.decode()
+
+    def write_str(self, address, value: str, limit=1):
+        b_array = bytearray(value.encode())
+        size = len(b_array)
+        if size > limit:
+            raise MemoryError(f"String size is bigger then allocation:{value}")
+        self.buffer[address:address + size] = b_array
+
+
+a_string = "abc"
+encoded_string = a_string.encode()
+byte_array = bytearray(encoded_string)
+
 
 def processor_shared_memory_name(proc: API_Proc):
     return f"processor_control_{proc.name}"

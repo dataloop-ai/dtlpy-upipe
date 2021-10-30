@@ -1,12 +1,13 @@
 import asyncio
 
+from mock.sdk import API_ProcSettings
 from mock.sdk.entities import Processor, Pipe
 
 
 async def main():
 
     a = Processor('a', entry='a.py')
-    b = Processor('b', entry='b.py', host="localhost")
+    b = Processor('b', entry='b.py', settings=API_ProcSettings(host="localhost"))
     pipe = Pipe('plus-one')
     pipe.add(a).add(b)
     await pipe.start()

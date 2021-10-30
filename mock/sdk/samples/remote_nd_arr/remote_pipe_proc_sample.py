@@ -1,11 +1,13 @@
 import asyncio
-from mock.sdk.entities import Processor, Pipe,Queue
+
+from mock.sdk import API_ProcSettings
+from mock.sdk.entities import Processor, Pipe,MemQueue
 
 
 async def main():
     print("Hello pipe")
     reader = Processor('reader', entry='reader.py')
-    writer = Processor('writer', entry='writer.py', host='localhost')
+    writer = Processor('writer', entry='writer.py', settings=API_ProcSettings(host="localhost"))
     pipe = Pipe('streamer')
     pipe.add(reader).add(writer)
     await pipe.start()

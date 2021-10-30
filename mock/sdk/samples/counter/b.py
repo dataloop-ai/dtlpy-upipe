@@ -1,21 +1,20 @@
 import asyncio
 
-from mock.sdk.entities import Queue, Processor
+from mock.sdk.entities import MemQueue, Processor
 
 
 async def main():
     print("Hello b")
     proc = Processor("b")
     await proc.connect()
-
-    proc.start()
+    limit = proc.config['limit']
     counter = 0
     while True:
         try:
             counter = await proc.get_sync()
-            if counter == 100000:
+            if counter == limit:
                 break
-            q: Queue = proc.in_qs[0]
+            q: MemQueue = proc.in_qs[0]
             if counter != q.exe_counter:
                 raise BrokenPipeError(f"Execution error: counter {counter}, executed {q.exe_counter}")
         except TimeoutError:

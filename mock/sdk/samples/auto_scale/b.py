@@ -3,7 +3,7 @@ import hashlib
 import string
 import random
 
-from mock.sdk.entities import Queue, Processor, DType
+from mock.sdk.entities import MemQueue, Processor, DType
 
 
 limit = 10000

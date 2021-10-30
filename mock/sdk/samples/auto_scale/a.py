@@ -1,5 +1,5 @@
 import asyncio
-from mock.sdk.entities import Queue, Processor, DType
+from mock.sdk.entities import MemQueue, Processor, DType
 
 limit = 10000
 async def main():

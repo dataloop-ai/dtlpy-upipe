@@ -1,22 +1,23 @@
 import asyncio
 
 import mock.sdk as up
-from mock.sdk.entities import Queue, Processor
+from mock.sdk.entities import MemQueue, Processor
 
 
 async def main():
     print("Hello a")
     me = Processor("a")
     await me.connect()
+    limit = me.config['limit']
     print("a connected")
     val = 1
-    q: Queue = me.get_next_q_to_emit()
+    q: MemQueue = me.get_next_q_to_emit()
     while True:
         if await me.emit(val, up.DType.U32):
 
             if val % 10000 == 0:
                 print(f"{val / 1000}K")
-            if val == 100000:
+            if val == limit:
                 break
             val += 1
 

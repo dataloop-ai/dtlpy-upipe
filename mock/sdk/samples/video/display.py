@@ -1,6 +1,6 @@
 import asyncio
 from threading import Thread
-from mock.sdk.entities import Queue, Processor
+from mock.sdk.entities import MemQueue, Processor
 
 import mock.sdk as up
 import time

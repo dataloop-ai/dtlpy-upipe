@@ -1,7 +1,7 @@
 import asyncio
 
 
-from mock.sdk.entities import Processor, Pipe,Queue
+from mock.sdk.entities import Processor, Pipe,MemQueue
 
 async def main():
     a = Processor('a', entry='a.py')

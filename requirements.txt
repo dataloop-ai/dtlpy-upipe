@@ -10,3 +10,6 @@ psutil~=5.8.0
 starlette~=0.16.0
 opencv-python~=4.5.3.56
 colorama~=0.4.4
+websocket-client~=1.2.1
+requests~=2.26.0
+pip~=21.3

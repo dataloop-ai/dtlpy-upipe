@@ -3,11 +3,11 @@ import asyncio
 import numpy as np
 
 from mock.sdk import DataFrame, DType
-from mock.sdk.entities.mem_queue import Queue
+from mock.sdk.entities.mem_queue import MemQueue
 
 
 async def test_throughput(count: int):
-    q = Queue("a", "b", "12", size=4000)
+    q = MemQueue("a", "b", "12", size=4000)
     for i in range(count):
         frame = DataFrame(i)
         if i == 65818:
@@ -28,7 +28,7 @@ async def test_throughput(count: int):
 
 
 async def test_json(count: int = 10):
-    q = Queue("a", "b", "12", size=4096)
+    q = MemQueue("a", "b", "12", size=4096)
     for i in range(count):
         frame = DataFrame({"counter": i})
         if await q.put(frame):
@@ -50,7 +50,7 @@ async def test_json(count: int = 10):
 
 
 async def test_str(count: int = 10):
-    q = Queue("a", "b", "12", size=100)
+    q = MemQueue("a", "b", "12", size=100)
     for i in range(count):
         frame = DataFrame(f"{i}")
         if await q.put(frame):
@@ -69,7 +69,7 @@ async def test_str(count: int = 10):
 
 
 async def test_serial(d_type: DType = DType.U8):
-    q = Queue("a", "b", "12", size=101)
+    q = MemQueue("a", "b", "12", size=101)
     for i in range(10):
         frame = DataFrame(i)
         if await q.put(frame):
@@ -88,7 +88,7 @@ async def test_serial(d_type: DType = DType.U8):
 
 
 async def test_arr(count: int = 100):
-    q = Queue("a", "b", "12", size=2341)
+    q = MemQueue("a", "b", "12", size=2341)
     for i in range(count):
         frame = DataFrame([i, i + 1, f"{i}", {"i": i}])
         if await q.put(frame):
@@ -107,7 +107,7 @@ async def test_arr(count: int = 100):
 
 
 async def test_tuple(count: int = 100):
-    q = Queue("a", "b", "12", size=2341)
+    q = MemQueue("a", "b", "12", size=2341)
     for i in range(count):
         frame = DataFrame((i, i + 1, f"{i}", {"i": i}))
         if await q.put(frame):
@@ -126,7 +126,7 @@ async def test_tuple(count: int = 100):
 
 
 async def test_nd_array(count: int = 100):
-    q = Queue("a", "b", "12", size=2341)
+    q = MemQueue("a", "b", "12", size=2341)
     for i in range(count):
         arr = np.random.rand(i % 5, i % 30)
         frame = DataFrame(arr)

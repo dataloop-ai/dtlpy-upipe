@@ -2,7 +2,7 @@ import cv2
 import asyncio
 
 from mock.sdk import DType
-from mock.sdk.entities import Queue, Processor
+from mock.sdk.entities import MemQueue, Processor
 
 async def main():
     me = Processor("reader")

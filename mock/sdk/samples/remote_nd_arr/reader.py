@@ -1,7 +1,7 @@
 import logging
 import asyncio
 import numpy as np
-from mock.sdk.entities import Processor, Pipe, Queue, DType
+from mock.sdk.entities import Processor, Pipe, MemQueue, DType
 
 logging.basicConfig(level=logging.DEBUG, format='%(process)d - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("reader")

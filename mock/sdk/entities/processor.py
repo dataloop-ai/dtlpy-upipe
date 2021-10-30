@@ -5,16 +5,15 @@ import sys
 import time
 from enum import IntEnum
 from multiprocessing import shared_memory
-from threading import Thread
 from typing import List
 
 from aiohttp import ClientConnectorError
 from colorama import init, Fore
 
 import mock.sdk.node.client as client
-from mock.sdk import API_Proc, QStatus, API_Proc_Message, ProcMessageType
+from mock.sdk import API_Proc, API_Proc_Message, ProcMessageType, API_ProcSettings, API_Queue, ProcType, API_Proc_Queues
 from .dataframe import DType, DataFrame
-from .mem_queue import Queue
+from .mem_queue import MemQueue
 from ..utils import processor_shared_memory_name
 
 init(autoreset=True)
@@ -29,17 +28,20 @@ class ProcessorExecutionStatus(IntEnum):
 class Processor:
     ...
     next_serial = 0
-    in_qs: List[Queue]
-    out_qs: List[Queue]
+    in_qs: List[MemQueue]
+    out_qs: List[MemQueue]
     SHARED_MEM_SIZE = 64
 
-    def __init__(self, name=None, entry=None, func=None, host=None, autoscale=1,
-                 input_buffer_size=1000 * 4096):  # name is unique per pipe
+    def __init__(self, name=None, entry=None, func=None,
+                 settings: API_ProcSettings = API_ProcSettings(), config: dict = {}):  # name is unique per pipe
+        self.instance_id = -1
+        self.settings = settings
         if not name:
             name = sys.argv[0]
             print(f"Warning:Nameless processor started:{name}")
-        self.input_buffer_size = input_buffer_size
-        self.host = host
+        self.input_buffer_size = settings.input_buffer_size
+        self.host = settings.host
+        self.autoscale = settings.autoscale
         self.in_qs = []
         self.out_qs = []
         self.serial = None
@@ -49,7 +51,8 @@ class Processor:
         self.proc = None
         self.entry = entry
         self.function = None
-        self.autoscale = autoscale
+        self.registered = False
+        self.config = config
         if callable(func):
             self.function = func.__name__
             if entry:
@@ -98,8 +101,6 @@ class Processor:
         return processor
 
     async def register(self):
-        if self.registered:
-            return
         printed = False
         while True:
             try:
@@ -111,7 +112,8 @@ class Processor:
                     printed = True
                 await asyncio.sleep(5)
         for m in messages:
-            self.handle_message(m)
+            message = API_Proc_Message.parse_obj(m)
+            self.handle_message(message)
         self.registered = True
         return self.registered
 
@@ -119,46 +121,22 @@ class Processor:
         pass
 
     async def connect(self):
-        if not self.registered:
-            await self.register()
+        # if not self.registered:
+        await self.register()
         if not self.connected:
-            self.connected = await self.node_client.connect()
-        thread = Thread(target=self.monitor, daemon=True)
-        thread.start()
+            self.connected = self.node_client.connect()
+        # thread = Thread(target=self.monitor, daemon=True)
+        # thread.start()
 
     def get_child(self, name):
         proc = next((p for p in self.children if p.name == name), None)
         return proc
-
-    def enum(self):
-        self.serial = Processor.next_serial
-        Processor.next_serial += 1
-        for p in self.children:
-            p.enum()
-
-    def allocate_queues(self):
-        allocated = []
-        for p in self.children:
-            q_id = Queue.allocate_id()
-            q = Queue(self.name, p.name, q_id, self.input_buffer_size, p.host)
-            allocated.append(q)
-            allocated.extend(p.allocate_queues())
-        return allocated
-
-    def report_q_status(self):
-        current_time = time.time() * 1000  # ms
-        pending = 0
-        for q in self.in_qs:
-            pending += q.log.pending_stats
-            status = QStatus(q_id=q.q_id, pending=pending, time=current_time)
-            self.node_client.report_q_status(self.api_def, status)
 
     def monitor(self):
         while True:
             time.sleep(1)
             if not self.connected:
                 continue
-            self.report_q_status()
 
     def all_child_procs(self):
         procs = [self]
@@ -173,20 +151,30 @@ class Processor:
             me = 1
         return me + sum([p.count for p in self.children])
 
-    def get_q(self, q_id, in_q=True):
+    def in_q_exist(self, qid):
         qs = self.in_qs
-        if not in_q:
-            qs = self.out_qs
         for q in qs:
-            if q.q_id == q_id:
-                return q
-        return None
+            if q.qid == qid:
+                return True
+        return False
 
-    def add_q(self, q):
-        if q["to_p"] == self.name and not self.get_q(q['q_id']):
-            self.in_qs.append(Queue(q['from_p'], q['to_p'], q['q_id'], int(q['size']), q['host']))
-        if q["from_p"] == self.name and not self.get_q(q['q_id'], False):
-            self.out_qs.append(Queue(q['from_p'], q['to_p'], q['q_id'], int(q['size']), q['host']))
+    def out_q_exist(self, qid):
+        qs = self.out_qs
+        for q in qs:
+            if q.qid == qid:
+                return True
+        return False
+
+    def q_exist(self, q: API_Queue):
+        return self.in_q_exist(q.qid) or self.out_q_exist(q.qid)
+
+    def add_q(self, q: API_Queue):
+        if self.q_exist(q):
+            raise BrokenPipeError(f"Q already added to proc {self.name}")
+        if q.to_p == self.name and not self.in_q_exist(q.qid):
+            self.in_qs.append(MemQueue(q))
+        if q.from_p == self.name and not self.out_q_exist(q.qid):
+            self.out_qs.append(MemQueue(q))
 
     def run(self):
         self.execution_status = ProcessorExecutionStatus.RUNNING
@@ -197,15 +185,23 @@ class Processor:
 
     def handle_message(self, msg: API_Proc_Message):
         if msg.type == ProcMessageType.Q_UPDATE:
-            print("Q update request")
-            qs = msg.body["queues"]
-            for q in qs:
-                self.add_q(q)
+            print("Updating queues")
+            qs = API_Proc_Queues.parse_obj(msg.body)
+            for q in qs.queues:
+                queue = qs.queues[q]
+                self.add_q(queue)
+        if msg.type == ProcMessageType.CONFIG_UPDATE:
+            print("Updating config")
+            self.config = msg.body
+        if msg.type == ProcMessageType.REGISTRATION_INFO:
+            print("Updating registration info")
+            self.instance_id = msg.body['instance_id']
         if msg.type == ProcMessageType.PROC_TERMINATE:
             print("Termination request")
             self.request_termination = True
 
     def on_ws_message(self, msg):
+        msg = API_Proc_Message(msg)
         self.handle_message(msg)
 
     def get_current_message_data(self):
@@ -248,7 +244,7 @@ class Processor:
             raise GeneratorExit("Process terminated by node manager")
         for i in range(len(self.in_qs)):
             next_index = (self.consumer_next_q_index + i) % len(self.in_qs)
-            q: Queue = self.in_qs[next_index]
+            q: MemQueue = self.in_qs[next_index]
             frame = await q.get()
             if frame:
                 self.consumer_next_q_index += 1
@@ -274,4 +270,4 @@ class Processor:
     @property
     def api_def(self):
         return API_Proc(name=self.name, entry=self.entry, function=self.function, interpreter=self.interpreter,
-                        pid=self.pid, controller=self.controller, autoscale=self.autoscale)
+                        pid=self.pid, type=ProcType.PROCESSOR, settings=self.settings, config=self.config)

@@ -3,7 +3,7 @@ import asyncio
 import mock.sdk as up
 import time
 
-from mock.sdk.entities import Queue, Processor
+from mock.sdk.entities import MemQueue, Processor
 
 
 async def main():
@@ -15,10 +15,11 @@ async def main():
     counter = 0
     while True:
         try:
+            q: MemQueue = proc.in_qs[0]
             counter = await proc.get_sync()
             if counter == 15000:
                 break
-            q: Queue = proc.in_qs[0]
+
             if counter != q.exe_counter:
                 raise BrokenPipeError(f"Execution error: counter {counter}, executed {q.exe_counter}")
         except TimeoutError:

@@ -1,19 +1,14 @@
-import asyncio
 import sys
+import time
 
-import aiohttp
-from functools import wraps
+def spinning_cursor():
+    while True:
+        for cursor in '|/-\\':
+            yield cursor
 
-
-
-
-async def main():
-    async with aiohttp.ClientSession() as session:
-        async with session.get('https://www.google.com/'):
-            pass
-
-
-if __name__ == '__main__':
-    if sys.version_info[:2] == (3, 7):
-        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-    asyncio.run(main())
+spinner = spinning_cursor()
+for _ in range(50):
+    sys.stdout.write(next(spinner))
+    sys.stdout.flush()
+    time.sleep(0.1)
+    sys.stdout.write('\b')

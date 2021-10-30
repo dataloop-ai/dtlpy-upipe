@@ -8,28 +8,18 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette import status
 from starlette.requests import Request
+from mock.sdk.types import API_Queue, API_Response, API_Proc, API_Proc_Message, ProcMessageType, \
+    API_Pipe, ProcType, server_proc_def
+from mock.sdk.node.manager.node_main import ComputeNode
 
-from mock.sdk.node.server import ProcessManager
-from mock.sdk.types import API_Queue, API_Response, API_Proc, API_Proc_Message, NODE_PROC_NAME, ProcMessageType
-
-# noinspection PyTypeChecker
-manager: ProcessManager = None  # set on startup
 fast_api = FastAPI()
-# noinspection PyTypeChecker
-controller_proc_name: str = None
+
+node = ComputeNode()
 
 
 @fast_api.get("/")
 def read_root():
     return {"Hello": "World"}
-
-
-@fast_api.get("/serve")
-async def serve():
-    await manager.serve()
-    if not manager.ready:
-        return API_Response(success=False, code="NOT_READY", message="Server not ready")
-    return API_Response(success=True)
 
 
 @fast_api.get("/ping")
@@ -38,25 +28,34 @@ async def ping():
 
 
 @fast_api.post("/register_proc")
-async def register(proc: API_Proc):
-    global controller_proc_name
-    if proc.controller:
-        await manager.register(proc)
-        return API_Response(success=True, data={"messages": []})
-    if not manager.ready:
-        return API_Response(success=False, code="NOT_READY", message="Server not ready")
-    await manager.register(proc)
-    response = API_Response(success=True)
-    q_defs = manager.get_queue_def_message(proc.name)
-    response.messages.append(q_defs)
-    return response
+async def register_proc(proc: API_Proc):
+    queues_def = node.get_proc_queues(proc.name)
+    instance_id, config = node.register_proc_instance(proc.name)
+    registration_info = {"instance_id": instance_id}
+    q_update_msg = API_Proc_Message(dest=proc.name, sender=server_proc_def,
+                                    type=ProcMessageType.Q_UPDATE, body=queues_def, scope=ProcType.PROCESSOR)
+    config_update_msg = API_Proc_Message(dest=proc.name, sender=server_proc_def,
+                                         type=ProcMessageType.CONFIG_UPDATE, body=config, scope=ProcType.PROCESSOR)
+    registration_update_msg = API_Proc_Message(dest=proc.name, sender=server_proc_def,
+                                               type=ProcMessageType.REGISTRATION_INFO, body=registration_info,
+                                               scope=ProcType.PROCESSOR)
+    return API_Response(success=True, messages=[registration_update_msg, q_update_msg, config_update_msg])
 
 
-@fast_api.post("/register_q")
-async def register_q(q: API_Queue):
-    await manager.add_q(q.from_p, q)
-    await manager.add_q(q.to_p, q)
-    return {"Success": True}
+# noinspection PyBroadException
+@fast_api.post("/register_pipe")
+async def register_pipe(pipe: API_Pipe):
+    try:
+        # msg: API_Proc_Message = API_Proc_Message(sender=server_proc_def, dest=manager.node_proc.name,
+        #                                          type=ProcMessageType.PIPE_REGISTER,
+        #                                          body=pipe, scope=ProcType.NODE)
+        global node
+        node.register_pipe(pipe)
+        # await manager.register_pipe(pipe)
+        # await manager.node_connection.send_json(msg.dict())
+        return API_Response(success=True, data=server_proc_def.dict())
+    except Exception as e:
+        return API_Response(success=False, text=f"Error registering pipe")
 
 
 @fast_api.post("/push_q")
@@ -64,35 +63,45 @@ async def push_q(q: str = Form(...), frame_file: UploadFile = Form(...)):
     q = API_Queue(**json.loads(q))
     contents = await frame_file.read()
     frame = pickle.loads(contents)
-    added = await manager.put_in_q(q, frame)
-    return {"Success": added}
+    added = await node.push_q(q, frame)
+    return API_Response(success=added)
 
 
 @fast_api.on_event("startup")
 async def startup_event():
-    global manager
+    global node
     print("network ready")
-    manager = ProcessManager(controller_proc_name)
+    node.start()
+    print("Server ready")
+    return
+
+
+async def handle_server_message(message: API_Proc_Message):
+    pass
+
+
+msg_counter = 0
 
 
 @fast_api.websocket("/ws/connect/{proc_name}")
 async def websocket_endpoint(websocket: WebSocket, proc_name: str):
-    await manager.connect(proc_name, websocket)
+    global msg_counter
+    await node.connect_proc(proc_name, websocket)
     try:
         while True:
             data = await websocket.receive_text()
+            msg = json.loads(data)
+            msg_counter += 1
             try:
-                msg: API_Proc_Message = API_Proc_Message.parse_obj(json.loads(data))
-                if msg.type == ProcMessageType.PROC_TERMINATE:
-                    pass
-                if msg.dest == NODE_PROC_NAME:
-                    await manager.node_connection.send_json(msg.json())
-                elif msg.dest in manager.proc_connections:
-                    await manager.send_message(msg)
-            except:
+                proc_msg: API_Proc_Message = API_Proc_Message.from_json(json.loads(data))
+                if proc_msg.scope == ProcType.SERVER:
+                    await handle_server_message(msg)
+                else:
+                    node.process_message(proc_msg)
+            except Exception as e:
                 raise ValueError("Un supported processor message")
     except WebSocketDisconnect:
-        manager.disconnect(proc_name, websocket)
+        await node.disconnect_proc(proc_name, websocket)
         # await manager.broadcast(f"Client #{proc_name} left the chat")
 
 

@@ -3,7 +3,7 @@ import asyncio
 import sys
 import time
 
-from mock.sdk.entities import Queue, Processor
+from mock.sdk.entities import MemQueue, Processor
 logging.basicConfig(level=logging.DEBUG, format='%(process)d - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("writer")
 

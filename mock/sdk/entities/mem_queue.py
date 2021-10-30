@@ -7,9 +7,10 @@ from multiprocessing import shared_memory
 
 from pydantic.class_validators import Optional
 from pydantic.main import BaseModel
+from typing import List
 
 from mock.sdk import API_Queue
-from .dataframe import DataFrame
+from .dataframe import DataFrame, DType
 
 import asyncio
 
@@ -37,8 +38,8 @@ class QLogEntry(BaseModel):
 
 class QActionLog:
     def __init__(self, entry_limit=60):
-        self._enqueue_log: list[QLogEntry] = []
-        self._dequque_log: list[QLogEntry] = []
+        self._enqueue_log: List[QLogEntry] = []
+        self._dequque_log: List[QLogEntry] = []
         self.entry_limit = entry_limit
 
     def add_to_log(self, entry: QLogEntry, log: list):
@@ -83,13 +84,13 @@ class FRAME_STATUS(IntEnum):
 class FrameParser:
     def __init__(self, buffer, exe_index):
         self.exe_index = exe_index
-        self.frame_status_pointer = exe_index + Queue.FRAME_STATUS_OFFSET
+        self.frame_status_pointer = exe_index + MemQueue.FRAME_STATUS_OFFSET
         self.frame_status = buffer[self.frame_status_pointer]
-        self.frame_d_type = buffer[exe_index + Queue.FRAME_TYPE_OFFSET]
-        self.frame_size_pointer = exe_index + Queue.FRAME_SIZE_OFFSET
+        self.frame_d_type = buffer[exe_index + MemQueue.FRAME_TYPE_OFFSET]
+        self.frame_size_pointer = exe_index + MemQueue.FRAME_SIZE_OFFSET
         self.frame_size = int.from_bytes(buffer[self.frame_size_pointer:self.frame_size_pointer + 4], "little")
-        self.frame_data_pointer = exe_index + Queue.FRAME_HEADER_SIZE
-        self.frame_data_size = self.frame_size - Queue.FRAME_HEADER_SIZE
+        self.frame_data_pointer = exe_index + MemQueue.FRAME_HEADER_SIZE
+        self.frame_data_size = self.frame_size - MemQueue.FRAME_HEADER_SIZE
         self.frame_data = bytearray(self.frame_data_size)
         self.frame_data[:] = buffer[self.frame_data_pointer:self.frame_data_pointer + self.frame_data_size]
 
@@ -105,7 +106,7 @@ class FrameParser:
         print(f"frame_data:{self.frame_data}")
 
 
-class Queue:
+class MemQueue:
     next_serial = 0
     # frame header space
     FRAME_HEADER_SIZE = 32  # added to every frame
@@ -136,26 +137,26 @@ class Queue:
 
     @staticmethod
     def allocate_id():
-        q_id = Queue.next_serial
-        Queue.next_serial += 1
+        q_id = MemQueue.next_serial
+        MemQueue.next_serial += 1
         return q_id
 
-    def __init__(self, from_p: str, to_p: str, q_id: str, size, host=None):
+    def __init__(self, q: API_Queue):
         self.log: QActionLog = QActionLog()
         min_q_size = self.Q_CONTROL_SIZE + self.FRAME_HEADER_SIZE + 1  # send at least 1 byte ...
-        if size < min_q_size:
+        if q.size < min_q_size:
             raise MemoryError(f"Queue size must be at least {min_q_size}")
         self.frame_counter = 0
-        self.q_id = q_id
-        self.from_p = from_p
-        self.to_p = to_p
+        self.qid = q.qid
+        self.from_p = q.from_p
+        self.to_p = q.to_p
         self.length = 10
-        self.name = f"{from_p} -> {to_p} ({self.q_id})"
-        self.memory_name = f"Q_{q_id}"
-        self.size = size
+        self.name = f"{self.from_p} -> {self.to_p} ({self.qid})"
+        self.memory_name = f"Q_{self.qid}"
+        self.size = q.size
         self.nextMessageAddress = 0
         self.currentAddress = 0
-        self.host = host
+        self.host = q.host
         try:
             self.mem = shared_memory.SharedMemory(name=self.memory_name, create=True, size=self.size)
             self.mem.buf[:] = bytearray(self.size)
@@ -248,7 +249,7 @@ class Queue:
                 print(f"CRC Check: Expected:{expected_crc32},Actual:{actual_crc32}")
                 raise BrokenPipeError(f"Frame CRC32 error at index:{start_exe_index}, exe count:{self.exe_counter} ")
             # done
-            frame = DataFrame.from_byte_arr(frame_data, frame_d_type)
+            frame = DataFrame.from_byte_arr(frame_data, DType(frame_d_type))
             self.exe_counter += 1
             return frame
         finally:
@@ -260,11 +261,11 @@ class Queue:
             return False
         return True
 
-    async def put(self, msg: DataFrame):
+    async def put(self, df: DataFrame):
         capacity = (self.size - self.Q_CONTROL_SIZE - self.free_space) / self.size
         if capacity > self.MAX_CAPACITY:
             return False
-        frame_size = msg.size + self.FRAME_HEADER_SIZE
+        frame_size = df.size + self.FRAME_HEADER_SIZE
         if frame_size > self.free_space:
             return False
         if self.alloc_index == 2765604:
@@ -273,10 +274,10 @@ class Queue:
             f"Put {current_milli_time()} - Frame size:{frame_size}, free space:{self.free_space}, alloc_index:{self.alloc_index},exe_index:{self.exe_index}")
         try:
             await self.acquire_write_lock()
-            body = msg.byte_arr_data
+            body = df.byte_arr_data
             header = bytearray(self.FRAME_HEADER_SIZE)
             header[self.FRAME_STATUS_OFFSET] = FRAME_STATUS.CREATED
-            header[self.FRAME_TYPE_OFFSET] = msg.d_type
+            header[self.FRAME_TYPE_OFFSET] = df.d_type
             header[self.FRAME_SIZE_OFFSET:self.FRAME_SIZE_OFFSET + 4] = frame_size.to_bytes(4, "little")
             header[self.FRAME_WATERMARK_OFFSET:self.FRAME_WATERMARK_OFFSET + 8] = self.WATER_MARK
             header[self.FRAME_CRC32_OFFSET:self.FRAME_CRC32_OFFSET + 4] = binascii.crc32(body).to_bytes(4, "little")
@@ -309,14 +310,6 @@ class Queue:
     def print(self):
         parser = FrameParser(self.mem.buf, self.exe_index)
         parser.print()
-
-    def handle_incoming_message(self):
-        msg = DataFrame.from_buffer(self.mem, self.nextMessageAddress)
-        if self.on_message:
-            self.on_message(msg)
-
-    def get_message(self):
-        pass
 
     def get_frame_status(self, frame_start):
         address = frame_start + self.FRAME_STATUS_OFFSET
@@ -430,7 +423,7 @@ class Queue:
 
     @property
     def api_def(self):
-        return API_Queue(from_p=self.from_p, to_p=self.to_p, q_id=self.q_id, size=self.size, host=self.host)
+        return API_Queue(from_p=self.from_p, to_p=self.to_p, qid=self.qid, size=self.size, host=self.host)
 
     @property
     def status_str(self):

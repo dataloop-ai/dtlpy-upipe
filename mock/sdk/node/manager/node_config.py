@@ -1,8 +1,8 @@
 import os
-
-config_path = 'config.ini'
 from configparser import ConfigParser
 import uuid
+
+config_path = 'config.ini'
 
 
 class NodeConfig:

@@ -16,7 +16,7 @@ class InstanceState(IntEnum):
     READY = 0
     LAUNCHED = 1
     RUNNING = 2
-    DONE = 2
+    DONE = 3
 
 
 class ProcessorInstance:
@@ -25,10 +25,10 @@ class ProcessorInstance:
               ]
     next_color_index = 0
 
-    def __init__(self, proc, process, instance_id: int, instance_type=InstanceType.SUB_PROCESS, stdout_q=None):
+    def __init__(self, proc, process, instance_type=InstanceType.SUB_PROCESS, stdout_q=None):
         self.proc = proc
         self.process = process
-        self.instance_id = instance_id
+        self.instance_id = -2
         self.instance_type = instance_type
         self.stdout_q = stdout_q
         self.color_index = ProcessorInstance.next_color_index

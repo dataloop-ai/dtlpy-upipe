@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-
+from pydantic.class_validators import Optional
 
 from .network import API_Proc
 
@@ -12,7 +12,7 @@ class NodeUtilizationEntry(BaseModel):
 class ProcUtilizationEntry(BaseModel):
     cpu: float
     memory: float
-    pending: int
+    pending: Optional[int]
     time: int
     proc: API_Proc
 

@@ -1,6 +1,6 @@
 import asyncio
 
-from mock.sdk.entities import Queue, Processor
+from mock.sdk.entities import MemQueue, Processor
 
 import cv2
 

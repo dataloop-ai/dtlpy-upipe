@@ -1,7 +1,7 @@
 import asyncio
 
 import mock.sdk as up
-from mock.sdk.entities import Queue, Processor
+from mock.sdk.entities import MemQueue, Processor
 
 
 async def main():
@@ -10,7 +10,9 @@ async def main():
     await me.connect()
     print("a connected")
     val = 1
-    q: Queue = me.get_next_q_to_emit()
+    q: MemQueue = me.get_next_q_to_emit()
+    if q.alloc_counter != 0:
+        raise BrokenPipeError("Queue already filled")
     while True:
         if await me.emit(val, up.DType.U32):
 
