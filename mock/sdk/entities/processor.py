@@ -80,8 +80,11 @@ class Processor:
 
     def cleanup(self):
         print(Fore.BLUE + f"Processor cleanup : {self.name}")
-        for task in asyncio.Task.all_tasks():
-            task.cancel()
+        try:
+            for task in asyncio.all_tasks():
+                task.cancel()
+        except Exception:
+            print(Fore.RED + f"FAILED CLEANUP : {self.name}")
         loop = asyncio.get_event_loop()
         loop.run_until_complete(self.node_client.cleanup())
         print(Fore.RED + f'Bye {self.name}')
