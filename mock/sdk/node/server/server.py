@@ -8,9 +8,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette import status
 from starlette.requests import Request
-from mock.sdk.types import API_Queue, API_Response, API_Proc, API_Proc_Message, ProcMessageType, \
-    API_Pipe, ProcType, server_proc_def
+from mock.sdk.types import API_Queue, API_Response, API_Pipe_Entity, API_Pipe_Message, PipeMessageType, \
+    API_Pipe, PipeEntityType, parse_pipe_message
 from mock.sdk.node.manager.node_main import ComputeNode
+
+server_proc_def = API_Pipe_Entity(name="upipe-local-server",id="upipe-local-server", type=PipeEntityType.SERVER)
 
 fast_api = FastAPI()
 
@@ -28,17 +30,17 @@ async def ping():
 
 
 @fast_api.post("/register_proc")
-async def register_proc(proc: API_Proc):
+async def register_proc(proc: API_Pipe_Entity):
     queues_def = node.get_proc_queues(proc.name)
     instance_id, config = node.register_proc_instance(proc.name)
     registration_info = {"instance_id": instance_id}
-    q_update_msg = API_Proc_Message(dest=proc.name, sender=server_proc_def,
-                                    type=ProcMessageType.Q_UPDATE, body=queues_def, scope=ProcType.PROCESSOR)
-    config_update_msg = API_Proc_Message(dest=proc.name, sender=server_proc_def,
-                                         type=ProcMessageType.CONFIG_UPDATE, body=config, scope=ProcType.PROCESSOR)
-    registration_update_msg = API_Proc_Message(dest=proc.name, sender=server_proc_def,
-                                               type=ProcMessageType.REGISTRATION_INFO, body=registration_info,
-                                               scope=ProcType.PROCESSOR)
+    q_update_msg = API_Pipe_Message(dest=proc.name, sender=server_proc_def.id,
+                                    type=PipeMessageType.Q_UPDATE, body=queues_def, scope=PipeEntityType.PROCESSOR)
+    config_update_msg = API_Pipe_Message(dest=proc.name, sender=server_proc_def.id,
+                                         type=PipeMessageType.CONFIG_UPDATE, body=config, scope=PipeEntityType.PROCESSOR)
+    registration_update_msg = API_Pipe_Message(dest=proc.name, sender=server_proc_def.id,
+                                               type=PipeMessageType.REGISTRATION_INFO, body=registration_info,
+                                               scope=PipeEntityType.PROCESSOR)
     return API_Response(success=True, messages=[registration_update_msg, q_update_msg, config_update_msg])
 
 
@@ -46,9 +48,9 @@ async def register_proc(proc: API_Proc):
 @fast_api.post("/register_pipe")
 async def register_pipe(pipe: API_Pipe):
     try:
-        # msg: API_Proc_Message = API_Proc_Message(sender=server_proc_def, dest=manager.node_proc.name,
-        #                                          type=ProcMessageType.PIPE_REGISTER,
-        #                                          body=pipe, scope=ProcType.NODE)
+        # msg: API_Pipe_Message = API_Pipe_Message(sender=server_proc_def, dest=manager.node_proc.name,
+        #                                          type=PipeMessageType.PIPE_REGISTER,
+        #                                          body=pipe, scope=PipeEntityType.NODE)
         global node
         node.register_pipe(pipe)
         # await manager.register_pipe(pipe)
@@ -76,7 +78,7 @@ async def startup_event():
     return
 
 
-async def handle_server_message(message: API_Proc_Message):
+async def handle_server_message(message: API_Pipe_Message):
     pass
 
 
@@ -93,8 +95,8 @@ async def websocket_endpoint(websocket: WebSocket, proc_name: str):
             msg = json.loads(data)
             msg_counter += 1
             try:
-                proc_msg: API_Proc_Message = API_Proc_Message.from_json(json.loads(data))
-                if proc_msg.scope == ProcType.SERVER:
+                proc_msg: API_Pipe_Message = parse_pipe_message(json.loads(data))
+                if proc_msg.scope == PipeEntityType.SERVER:
                     await handle_server_message(msg)
                 else:
                     node.process_message(proc_msg)

@@ -1,7 +1,7 @@
 from enum import IntEnum
 from multiprocessing import shared_memory
 
-from mock.sdk import API_Proc
+from mock.sdk import API_Pipe_Entity
 
 
 class MEMORY_ALLOCATION_MODE(IntEnum):
@@ -62,11 +62,3 @@ class SharedMemoryBuffer:
             raise MemoryError(f"String size is bigger then allocation:{value}")
         self.buffer[address:address + size] = b_array
 
-
-a_string = "abc"
-encoded_string = a_string.encode()
-byte_array = bytearray(encoded_string)
-
-
-def processor_shared_memory_name(proc: API_Proc):
-    return f"processor_control_{proc.name}"

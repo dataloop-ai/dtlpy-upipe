@@ -10,7 +10,7 @@ import aiohttp
 import websocket
 from aiohttp import FormData, ClientSession
 
-from mock.sdk import API_Proc, API_Response, API_Proc_Message, API_Pipe
+from mock.sdk import API_Pipe_Entity, API_Response, API_Pipe_Message, API_Pipe
 
 counter = 0
 
@@ -123,7 +123,7 @@ class NodeClient:
         return await self.server_session.get(ping_url)
 
     @retry(times=3)
-    async def register_proc(self, proc: API_Proc):
+    async def register_proc(self, proc: API_Pipe_Entity):
         register_url = f"http://{self.server_base_url}/register_proc"
         return await self.server_session.post(register_url, json=proc.dict())
 
@@ -132,14 +132,14 @@ class NodeClient:
         register_url = f"http://{self.server_base_url}/register_pipe"
         return await self.server_session.post(register_url, json=pipe.dict())
 
-    def send_message(self, msg: API_Proc_Message):
+    def send_message(self, msg: API_Pipe_Message):
         if not self.socket:
             return
         self.socket.send(msg.json())
 
     def handle_message(self, message):
         global counter
-        msg = API_Proc_Message.from_json(json.loads(message))
+        msg = API_Pipe_Message.from_json(json.loads(message))
         # noinspection PyBroadException
         try:
             if self.message_handler:
@@ -161,7 +161,7 @@ class NodeClient:
         data = FormData()
         bin_frame = pickle.dumps(frame)
         # data.add_field('q', dict(q.api_def.dict()))
-        data.add_field('q', q.api_def.json())
+        data.add_field('q', q.queue_def.json())
         data.add_field('frame_file', bin_frame, content_type="multipart/form-data")
         resp = await session.post(url, data=data)
         if resp.status != 200:

@@ -5,15 +5,15 @@ import numpy as np
 from colorama import Fore
 from fastapi import WebSocket
 
-from mock.sdk.types import API_Pipe, API_Proc, ProcType, PipeActionType, PipeExecutionStatus
+from mock.sdk.types import API_Pipe, API_Pipe_Entity, PipeEntityType, PipeActionType, PipeExecutionStatus
 from .process_controller import ProcessorController
 from .processor_instance import ProcessorInstance
 from .. import NodeClient
-from ... import API_Pipe_Control_Message, API_Proc_Message, ProcMessageType, QStatus, ProcUtilizationEntry, MemQueue
+from ... import API_Pipe_Control_Message, API_Pipe_Message, PipeMessageType, QStatus, ProcUtilizationEntry, MemQueue
 
 
 class PipeController:
-    def __init__(self, node_client: NodeClient, node_proc: API_Proc):
+    def __init__(self, node_client: NodeClient, node_proc: API_Pipe_Entity):
         self.node_client = node_client
         self.processors: Dict[str, ProcessorController] = {}
         self.queues: Dict[str, MemQueue] = {}
@@ -53,16 +53,16 @@ class PipeController:
         if pipe_control_msg.action == PipeActionType.START:
             self.start()
 
-    def process_pipe_message(self, proc_msg: API_Proc_Message):
-        if proc_msg.type == ProcMessageType.PIPE_CONTROL:
+    def process_pipe_message(self, proc_msg: API_Pipe_Message):
+        if proc_msg.type == PipeMessageType.PIPE_CONTROL:
             pipe_control_msg = API_Pipe_Control_Message.parse_obj(proc_msg)
             self.process_control_message(pipe_control_msg)
 
-    def process_message(self, proc_msg: API_Proc_Message):
+    def process_message(self, proc_msg: API_Pipe_Message):
         try:
-            if proc_msg.scope == ProcType.PIPELINE:
+            if proc_msg.scope == PipeEntityType.PIPELINE:
                 self.process_pipe_message(proc_msg)
-            if proc_msg.scope == ProcType.PROCESSOR:
+            if proc_msg.scope == PipeEntityType.PROCESSOR:
                 if proc_msg.dest not in self.processors:
                     return
                 self.processors[proc_msg.dest].process_message(proc_msg)
@@ -163,8 +163,8 @@ class PipeController:
         return self.processors[processor_to_scale_down]
 
     # def send_pipe_status(self, status: PipeExecutionStatus):
-    #     status_message = API_Pipe_Status_Message(sender=self.api_def, type=ProcMessageType.PIPE_STATUS,
-    #                                              dest=server_proc_def, status=status, scope=ProcType.SERVER,
+    #     status_message = API_Pipe_Status_Message(sender=self.api_def, type=PipeMessageType.PIPE_STATUS,
+    #                                              dest=server_proc_def, status=status, scope=PipeEntityType.SERVER,
     #                                              pipe_name=self.name)
     #     self.node_client.send_message(status_message)
 
@@ -221,4 +221,4 @@ class PipeController:
 
     @property
     def api_def(self):
-        return API_Proc(name=self.name, type=ProcType.PIPELINE_CONTROLLER)
+        return API_Pipe_Entity(name=self.name, id=self.name, type=PipeEntityType.PIPELINE_CONTROLLER)

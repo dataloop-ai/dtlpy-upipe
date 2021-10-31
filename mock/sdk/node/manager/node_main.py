@@ -11,9 +11,9 @@ import requests
 from colorama import init, Fore, Back
 from fastapi import WebSocket
 
-from mock.sdk import API_Node, API_Proc_Message, ProcMessageType, \
-    API_Pipe, PipeExecutionStatus, API_Pipe_Status_Message, ProcType, \
-    NodeUtilizationEntry, API_Proc, server_proc_def, API_Queue, API_Proc_Queues, DataFrame, \
+from mock.sdk import API_Node, API_Pipe_Message, PipeMessageType, \
+    API_Pipe, PipeExecutionStatus, API_Pipe_Status_Message, PipeEntityType, \
+    NodeUtilizationEntry, API_Pipe_Entity, API_Queue, API_Proc_Queues, DataFrame, \
     MemQueue
 from mock.sdk.node import NodeClient
 from mock.sdk.utils import SharedMemoryBuffer, MEMORY_ALLOCATION_MODE
@@ -83,8 +83,8 @@ class ComputeNode:
         for p in self._pipes:
             pipe: PipeController = self._pipes[p]
             for q in pipe.queues:
-                api_q: API_Queue = pipe.queues[q].api_def
-                queues.queues[api_q.qid] = api_q
+                api_q: API_Queue = pipe.queues[q].queue_def
+                queues.queues[api_q.id] = api_q
         return queues
 
     def register_proc_instance(self, proc_name: str) -> Tuple[int, dict]:
@@ -191,19 +191,19 @@ class ComputeNode:
             pipe = self._pipes[pipe_name]
             await pipe.disconnect_proc(proc_name)
 
-    def process_message(self, proc_msg: API_Proc_Message):
+    def process_message(self, proc_msg: API_Pipe_Message):
         try:
-            if proc_msg.scope == ProcType.PIPELINE:
+            if proc_msg.scope == PipeEntityType.PIPELINE:
                 if proc_msg.dest not in self._pipes:
                     raise IndexError("Message : Pipe does not exist")
                 self._pipes[proc_msg.dest].process_message(proc_msg)
-            if proc_msg.scope == ProcType.PROCESSOR:
+            if proc_msg.scope == PipeEntityType.PROCESSOR:
                 for pipe_name in self._pipes:
                     pipe = self._pipes[pipe_name].process_message(proc_msg)
         except Exception as e:
             print(f"Error on node message : {str(e)}")
 
-    def on_ws_message(self, proc_msg: API_Proc_Message):
+    def on_ws_message(self, proc_msg: API_Pipe_Message):
         self.process_message(proc_msg)
 
     def connect(self):
@@ -213,8 +213,8 @@ class ComputeNode:
     async def push_q(self, q: API_Queue, df: DataFrame):
         for pipe_name in self._pipes:
             pipe = self._pipes[pipe_name]
-            if q.qid in pipe.queues:
-                queue: MemQueue = pipe.queues[q.qid]
+            if q.id in pipe.queues:
+                queue: MemQueue = pipe.queues[q.id]
                 return await queue.put(df)
         return False
 
@@ -306,11 +306,12 @@ class ComputeNode:
             return False
         return True
 
-    def send_pipe_status(self, status: PipeExecutionStatus):
-        status_message = API_Pipe_Status_Message(sender=self.proc_def, type=ProcMessageType.PIPE_STATUS,
-                                                 dest=server_proc_def, status=status, scope=ProcType.SERVER,
-                                                 pipe_name=self.name)
-        self.node_client.send_message(status_message)
+    #
+    # def send_pipe_status(self, status: PipeExecutionStatus):
+    #     status_message = API_Pipe_Status_Message(sender=self.proc_def, type=PipeMessageType.PIPE_STATUS,
+    #                                              dest=server_proc_def, status=status, scope=PipeEntityType.SERVER,
+    #                                              pipe_name=self.name)
+    #     self.node_client.send_message(status_message)
 
     def monitor_pipe(self, pipe_name):
         pipe = self._pipes[pipe_name]
@@ -371,4 +372,4 @@ class ComputeNode:
 
     @property
     def proc_def(self):
-        return API_Proc(name=NODE_MANAGER_PROC_NAME, type=ProcType.NODE)
+        return API_Pipe_Entity(name=NODE_MANAGER_PROC_NAME, id=NODE_MANAGER_PROC_NAME, type=PipeEntityType.NODE)

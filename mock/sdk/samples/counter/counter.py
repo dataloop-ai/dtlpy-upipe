@@ -4,7 +4,7 @@ from mock.sdk.entities import Processor, Pipe
 
 
 async def main():
-    limit = 20000
+    limit = 50000
     config = {"limit": limit}
     a = Processor('a', entry='a.py', config=config)
     b = Processor('b', entry='b.py', config=config)

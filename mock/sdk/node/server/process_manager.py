@@ -2,7 +2,7 @@ from typing import Dict
 
 from fastapi import WebSocket
 
-from mock.sdk import API_Proc, API_Proc_Message, API_Pipe, API_Queue
+from mock.sdk import API_Pipe_Entity, API_Pipe_Message, API_Pipe, API_Queue
 
 
 # noinspection PyTypeChecker
@@ -15,7 +15,7 @@ class ProcessManager:
         self.proc_connections: Dict[str, WebSocket] = {}
         self.ready = False
         self.pipes: Dict[str, API_Pipe] = {}
-        self.node_proc: API_Proc = None
+        self.node_proc: API_Pipe_Entity = None
         self.node_connection: WebSocket = None
 
     async def register_pipe(self, pipe: API_Pipe):
@@ -36,10 +36,10 @@ class ProcessManager:
         else:
             del self.proc_connections[proc_name]
 
-    async def send_message_to_node(self, msg: API_Proc_Message):
+    async def send_message_to_node(self, msg: API_Pipe_Message):
         return await self.node_connection.send_json(msg)
 
-    async def send_message_to_proc(self, msg: API_Proc_Message):
+    async def send_message_to_proc(self, msg: API_Pipe_Message):
         if msg.dest not in self.proc_connections:
             raise ConnectionError(f"No connection to {msg.dest}")
         return await self.proc_connections[msg.dest].send_json(msg)

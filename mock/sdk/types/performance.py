@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from pydantic.class_validators import Optional
 
-from .network import API_Proc
+from .base import API_Pipe_Entity
 
 node_server = None
 
@@ -14,7 +14,7 @@ class ProcUtilizationEntry(BaseModel):
     memory: float
     pending: Optional[int]
     time: int
-    proc: API_Proc
+    proc: API_Pipe_Entity
 
 
 class QStatus(BaseModel):

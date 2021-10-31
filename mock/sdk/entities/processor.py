@@ -1,5 +1,7 @@
 import asyncio
 import atexit
+import hashlib
+import json
 import os
 import sys
 import time
@@ -11,10 +13,10 @@ from aiohttp import ClientConnectorError
 from colorama import init, Fore
 
 import mock.sdk.node.client as client
-from mock.sdk import API_Proc, API_Proc_Message, ProcMessageType, API_ProcSettings, API_Queue, ProcType, API_Proc_Queues
+from mock.sdk import API_Pipe_Entity, API_Pipe_Message, PipeMessageType, API_ProcSettings, API_Queue, PipeEntityType, \
+    API_Proc_Queues, API_Processor
 from .dataframe import DType, DataFrame
 from .mem_queue import MemQueue
-from ..utils import processor_shared_memory_name
 
 init(autoreset=True)
 
@@ -71,21 +73,23 @@ class Processor:
         self.request_termination = False  # called from manager to notify its over
         # self.smd = shared_memory_dict.SharedMemoryDict(name=name, size=1025)
         atexit.register(self.cleanup)
-        processor_memory_name = processor_shared_memory_name(self.api_def)
-        try:
-            self.mem = shared_memory.SharedMemory(name=processor_memory_name, create=True, size=self.SHARED_MEM_SIZE)
-            self.mem.buf[:] = bytearray(self.SHARED_MEM_SIZE)
-        except FileExistsError:
-            self.mem = shared_memory.SharedMemory(name=processor_memory_name, size=self.SHARED_MEM_SIZE)
+        # processor_memory_name = f"processor_control:{self.name}"
+        # try:
+        #     self.mem = shared_memory.SharedMemory(name=processor_memory_name, create=True, size=self.SHARED_MEM_SIZE)
+        #     self.mem.buf[:] = bytearray(self.SHARED_MEM_SIZE)
+        # except FileExistsError:
+        #     self.mem = shared_memory.SharedMemory(name=processor_memory_name, size=self.SHARED_MEM_SIZE)
 
+    # noinspection PyBroadException
     def cleanup(self):
         print(Fore.BLUE + f"Processor cleanup : {self.name}")
-        try:
-            for task in asyncio.all_tasks():
-                task.cancel()
-        except Exception:
-            print(Fore.RED + f"FAILED CLEANUP : {self.name}")
         loop = asyncio.get_event_loop()
+        # try:
+        #     for task in asyncio.all_tasks():
+        #         task.cancel()
+        # except Exception as e:
+        #     print(Fore.RED + f"FAILED CLEANUP : {self.name}: {str(e)}")
+
         loop.run_until_complete(self.node_client.cleanup())
         print(Fore.RED + f'Bye {self.name}')
 
@@ -107,7 +111,7 @@ class Processor:
         printed = False
         while True:
             try:
-                (data, messages) = await self.node_client.register_proc(self.api_def)
+                (data, messages) = await self.node_client.register_proc(self.processor_def)
                 break
             except ClientConnectorError:
                 if not printed:
@@ -115,7 +119,7 @@ class Processor:
                     printed = True
                 await asyncio.sleep(5)
         for m in messages:
-            message = API_Proc_Message.parse_obj(m)
+            message = API_Pipe_Message.parse_obj(m)
             self.handle_message(message)
         self.registered = True
         return self.registered
@@ -157,26 +161,26 @@ class Processor:
     def in_q_exist(self, qid):
         qs = self.in_qs
         for q in qs:
-            if q.qid == qid:
+            if q.id == qid:
                 return True
         return False
 
     def out_q_exist(self, qid):
         qs = self.out_qs
         for q in qs:
-            if q.qid == qid:
+            if q.id == qid:
                 return True
         return False
 
     def q_exist(self, q: API_Queue):
-        return self.in_q_exist(q.qid) or self.out_q_exist(q.qid)
+        return self.in_q_exist(q.id) or self.out_q_exist(q.id)
 
     def add_q(self, q: API_Queue):
         if self.q_exist(q):
             raise BrokenPipeError(f"Q already added to proc {self.name}")
-        if q.to_p == self.name and not self.in_q_exist(q.qid):
+        if q.to_p == self.name and not self.in_q_exist(q.id):
             self.in_qs.append(MemQueue(q))
-        if q.from_p == self.name and not self.out_q_exist(q.qid):
+        if q.from_p == self.name and not self.out_q_exist(q.id):
             self.out_qs.append(MemQueue(q))
 
     def run(self):
@@ -186,25 +190,25 @@ class Processor:
         if msg['control'] == 'run':
             self.run()
 
-    def handle_message(self, msg: API_Proc_Message):
-        if msg.type == ProcMessageType.Q_UPDATE:
+    def handle_message(self, msg: API_Pipe_Message):
+        if msg.type == PipeMessageType.Q_UPDATE:
             print("Updating queues")
             qs = API_Proc_Queues.parse_obj(msg.body)
             for q in qs.queues:
                 queue = qs.queues[q]
                 self.add_q(queue)
-        if msg.type == ProcMessageType.CONFIG_UPDATE:
+        if msg.type == PipeMessageType.CONFIG_UPDATE:
             print("Updating config")
             self.config = msg.body
-        if msg.type == ProcMessageType.REGISTRATION_INFO:
+        if msg.type == PipeMessageType.REGISTRATION_INFO:
             print("Updating registration info")
             self.instance_id = msg.body['instance_id']
-        if msg.type == ProcMessageType.PROC_TERMINATE:
+        if msg.type == PipeMessageType.PROC_TERMINATE:
             print("Termination request")
             self.request_termination = True
 
     def on_ws_message(self, msg):
-        msg = API_Proc_Message(msg)
+        msg = API_Pipe_Message(msg)
         self.handle_message(msg)
 
     def get_current_message_data(self):
@@ -267,10 +271,22 @@ class Processor:
             await asyncio.sleep(sleep_time)
 
     @property
+    def config_hash(self):
+        if len(self.config):
+            return ""
+        config_md5 = hashlib.md5(json.dumps(self.config, sort_keys=True).encode('utf-8')).hexdigest()
+        return config_md5
+
+    @property
+    def id(self):
+        return f"{self.name}:{self.config_hash}"
+
+    @property
     def executable(self):
         return sys.argv[0]
 
     @property
-    def api_def(self):
-        return API_Proc(name=self.name, entry=self.entry, function=self.function, interpreter=self.interpreter,
-                        pid=self.pid, type=ProcType.PROCESSOR, settings=self.settings, config=self.config)
+    def processor_def(self):
+        return API_Processor(name=self.name, id=self.id, entry=self.entry, function=self.function,
+                             interpreter=self.interpreter,
+                             type=PipeEntityType.PROCESSOR, settings=self.settings, config=self.config)

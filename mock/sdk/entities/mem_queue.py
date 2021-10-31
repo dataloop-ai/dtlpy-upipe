@@ -147,7 +147,7 @@ class MemQueue:
         if q.size < min_q_size:
             raise MemoryError(f"Queue size must be at least {min_q_size}")
         self.frame_counter = 0
-        self.qid = q.qid
+        self.qid = q.id
         self.from_p = q.from_p
         self.to_p = q.to_p
         self.length = 10
@@ -359,6 +359,10 @@ class MemQueue:
         await self.release_lock(self.W_LOCK_POINTER)
 
     @property
+    def id(self):
+        return self.name
+
+    @property
     def free_space(self):
         if self.alloc_index < self.exe_index:
             return self.exe_index - self.alloc_index
@@ -422,8 +426,9 @@ class MemQueue:
         self.mem.buf[self.STATUS_POINTER:self.STATUS_POINTER + 1] = int(val).to_bytes(1, "little")
 
     @property
-    def api_def(self):
-        return API_Queue(from_p=self.from_p, to_p=self.to_p, qid=self.qid, size=self.size, host=self.host)
+    def queue_def(self):
+        return API_Queue(name=self.name, from_p=self.from_p, to_p=self.to_p, id=self.qid, size=self.size,
+                         host=self.host)
 
     @property
     def status_str(self):

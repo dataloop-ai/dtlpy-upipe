@@ -11,9 +11,9 @@ from multiprocessing.queues import Queue
 
 from fastapi import WebSocket
 
-from mock.sdk import API_Proc, API_Proc_Message, MemQueue
+from mock.sdk import API_Pipe_Entity, API_Pipe_Message, MemQueue, API_Processor
 from mock.sdk.entities import Processor
-from mock.sdk.utils import processor_shared_memory_name, SharedMemoryBuffer, MEMORY_ALLOCATION_MODE
+from mock.sdk.utils import  SharedMemoryBuffer, MEMORY_ALLOCATION_MODE
 from .processor_instance import InstanceType, ProcessorInstance, InstanceState
 
 
@@ -58,15 +58,15 @@ class ProcessorController:
     ALIVE_POINTER = 0  # size 1
     LAST_INSTANCE_ID_POINTER = 1  # size 4
 
-    def __init__(self, proc: API_Proc, queues: [MemQueue]):
+    def __init__(self, proc: API_Processor, queues: [MemQueue]):
         self.proc = proc
         self._instances = []
         self._interpreter_path = sys.executable
         self._completed = False
         self._queues: [MemQueue] = queues
-        processor_memory_name = processor_shared_memory_name(proc)
+        processor_memory_name = f"processor_control:{self.name}"
         size = Processor.SHARED_MEM_SIZE
-        self._control_mem = SharedMemoryBuffer(processor_memory_name, size, MEMORY_ALLOCATION_MODE.USE_ONLY)
+        self._control_mem = SharedMemoryBuffer(processor_memory_name, size, MEMORY_ALLOCATION_MODE.CREATE_ONLY)
         self.connection = None
 
     async def connect_proc(self, websocket: WebSocket):
@@ -76,7 +76,7 @@ class ProcessorController:
     async def disconnect_proc(self):
         self.connection = None
 
-    def process_message(self, proc_msg: API_Proc_Message):
+    def process_message(self, proc_msg: API_Pipe_Message):
         pass
 
     def on_complete(self, with_errors):
