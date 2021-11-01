@@ -213,3 +213,4 @@ pip-selfcheck.json
 /data/
 
 **/node_modules
+/examples/classification_model/data/
