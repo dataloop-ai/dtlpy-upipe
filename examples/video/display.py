@@ -30,7 +30,7 @@ async def main():
     global display_frame
     print("Hello display")
 
-    proc = Processor('display.py')
+    proc = Processor(name='display', entry='display.py')
     await proc.connect()
     proc.start()
     print("started")

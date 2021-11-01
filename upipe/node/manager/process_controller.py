@@ -11,7 +11,8 @@ from multiprocessing.queues import Queue
 
 from fastapi import WebSocket
 
-from ... import entities, utils, types
+from ... import entities, utils
+from ... import types as up_types
 from .processor_instance import InstanceType, ProcessorInstance, InstanceState
 
 
@@ -56,7 +57,7 @@ class ProcessorController:
     ALIVE_POINTER = 0  # size 1
     LAST_INSTANCE_ID_POINTER = 1  # size 4
 
-    def __init__(self, proc: types.APIProcessor, queues: [entities.MemQueue]):
+    def __init__(self, proc: up_types.APIProcessor, queues: [entities.MemQueue]):
         self.proc = proc
         self._instances = []
         self._interpreter_path = sys.executable
@@ -76,7 +77,7 @@ class ProcessorController:
     async def disconnect_proc(self):
         self.connection = None
 
-    def process_message(self, proc_msg: types.APIPipeMessage):
+    def process_message(self, proc_msg: up_types.APIPipeMessage):
         pass
 
     def on_complete(self, with_errors):

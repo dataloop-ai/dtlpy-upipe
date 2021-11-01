@@ -11,7 +11,7 @@ async def main():
     # Create a VideoCapture object and read from input file
     # If the input is the camera, pass 0 instead of the video file name
     cap = cv2.VideoCapture('sample_640x360.mp4')
-    reader = Processor("reader.py")
+    reader = Processor(name='reader', entry="reader.py")
     await reader.connect()
     print("reader connected")
     # Check if camera opened successfully

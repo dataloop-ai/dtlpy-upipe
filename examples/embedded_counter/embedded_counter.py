@@ -2,7 +2,7 @@ import asyncio
 
 from upipe import Processor, Pipe, DType
 
-limit = 10000
+limit = 100000
 
 
 async def processor_a():
@@ -19,6 +19,8 @@ async def processor_a():
             if val == limit:
                 break
             val += 1
+        else:
+            print('failed')
     print("a done")
 
 
@@ -27,7 +29,6 @@ async def processor_b():
     print("Hello embedded processor b")
     proc = Processor("b")
     await proc.connect()
-    counter = 0
     while True:
         try:
             counter = await proc.get_sync()

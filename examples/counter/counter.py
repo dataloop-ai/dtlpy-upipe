@@ -1,6 +1,6 @@
 import asyncio
 
-from upipe.entities import Pipe, Processor
+from upipe import Pipe, Processor
 
 
 async def main():

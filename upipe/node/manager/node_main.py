@@ -96,7 +96,9 @@ class ComputeNode:
                     continue
                 launched_processor = processor
         if not launched_processor:
-            raise BrokenPipeError("Missing launched instance")
+            available_processors = ', '.join([key for pipe in self._pipes.values() for key in pipe.processors.keys()])
+            raise BrokenPipeError("Missing launched instance name: {!r}. available: {}".format(proc_name,
+                                                                                               available_processors))
         new_instance_id = launched_processor.register_instance()
         return new_instance_id, launched_processor.proc.config
 

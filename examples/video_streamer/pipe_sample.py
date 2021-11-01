@@ -9,6 +9,7 @@ async def main():
     pipe = up.Pipe('video-streamer')
     pipe.add(a).add(b)
     await pipe.start()
+    await pipe.wait_for_completion()
     print("Running")
 
 
