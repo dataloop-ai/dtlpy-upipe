@@ -8,7 +8,6 @@ async def main():
     await proc.connect()
 
     proc.start()
-    counter = 0
     while True:
         try:
             counter = await proc.get_sync()

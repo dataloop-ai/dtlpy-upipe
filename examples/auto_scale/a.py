@@ -2,6 +2,8 @@ import asyncio
 from upipe import MemQueue, Processor, DType
 
 limit = 10000
+
+
 async def main():
     global limit
     print("Hello stressor a")
