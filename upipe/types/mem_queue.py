@@ -2,10 +2,10 @@ from pydantic import BaseModel
 from pydantic.annotated_types import Dict
 from pydantic.class_validators import Optional
 
-from .base import API_Pipe_Entity, PipeEntityType
+from .base import APIPipeEntity, PipeEntityType
 
 
-class API_Queue(API_Pipe_Entity):
+class APIQueue(APIPipeEntity):
     type: PipeEntityType = PipeEntityType.QUEUE
     from_p: str
     to_p: str
@@ -13,6 +13,6 @@ class API_Queue(API_Pipe_Entity):
     host: Optional[str]
 
 
-class API_Proc_Queues(BaseModel):
+class APIProcQueues(BaseModel):
     proc_name: str
-    queues: Dict[str, API_Queue] = {}
+    queues: Dict[str, APIQueue] = {}
