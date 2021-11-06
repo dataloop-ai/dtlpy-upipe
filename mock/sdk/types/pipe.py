@@ -5,7 +5,7 @@ from pydantic.annotated_types import Dict
 
 from .messages import API_Pipe_Message, PipeMessageType
 from .processor import API_Processor
-from .queue import API_Queue
+from .mem_queue import API_Queue
 from .base import API_Pipe_Entity, PipeEntityType
 
 

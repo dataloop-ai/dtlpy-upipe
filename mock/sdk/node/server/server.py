@@ -1,6 +1,6 @@
 import json
 import pickle
-
+import os
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, Form
 from fastapi.encoders import jsonable_encoder
@@ -117,4 +117,12 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 
 if __name__ == "__main__":
-    uvicorn.run("server:fast_api", host="localhost", port=852, reload=False, log_level="warning")
+    HOST = os.getenv('UPIPE_HOST')
+    if HOST is None:
+        HOST = "localhost"
+    PORT = os.getenv('UPIPE_PORT')
+    if PORT is None:
+        PORT = 852
+    PORT = int(PORT)
+    print(f"Starting upipe server {os.getpid()} @ {HOST}:{PORT}")
+    uvicorn.run("server:fast_api", host=HOST, port=PORT, reload=False, log_level="warning")

@@ -102,10 +102,13 @@ class ComputeNode:
         return new_instance_id, launched_processor.proc.config
 
     @staticmethod
-    def launch_server():
+    def launch_server(host='localhost', port=852):
+        my_env = os.environ.copy()
+        my_env["UPIPE_HOST"] = host
+        my_env["UPIPE_PORT"] = str(port)
         kill_em_all(ComputeNode.server_path, False)
         # init server
-        server_process = subprocess.Popen([ComputeNode.interpreter_path, ComputeNode.server_path])
+        server_process = subprocess.Popen([ComputeNode.interpreter_path, ComputeNode.server_path], env=my_env)
         print(f"Launching new server {server_process.pid}")
         return server_process
 
