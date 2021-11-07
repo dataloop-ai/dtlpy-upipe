@@ -139,11 +139,12 @@ class NodeClient:
 
     def handle_message(self, message):
         global counter
-        msg = types.APIPipeMessage.from_json(json.loads(message))
         # noinspection PyBroadException
         try:
+            json_msg = json.loads(message)
+            msg = types.APIPipeMessage.from_json(json_msg)
             if self.message_handler:
-                self.message_handler(msg)
+                self.message_handler(json_msg)
         except Exception as e:
             print(f"Error on message processing :{self.proc_name}:{str(e)}")
             raise ConnectionError(f"Error on socket message: {self.proc_name}")

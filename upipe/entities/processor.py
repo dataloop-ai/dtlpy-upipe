@@ -12,6 +12,7 @@ from aiohttp import ClientConnectorError
 from colorama import init, Fore
 
 from .. import node, types, entities
+from ..types import PipeEntityType
 
 init(autoreset=True)
 
@@ -68,7 +69,7 @@ class Processor:
         self.pid = os.getpid()
         self.exe_name = os.path.basename(os.path.abspath(sys.modules['__main__'].__file__))
         self.proc_id = f"{self.name}:{self.pid}"
-        self.node_client = node.NodeClient(self.name)
+        self.node_client = node.NodeClient(self.name, self.on_ws_message)
         self.execution_status = ProcessorExecutionStatus.RUNNING
         self.consumer_next_q_index = 0
         self.interpreter = sys.executable
@@ -122,7 +123,7 @@ class Processor:
                 await asyncio.sleep(5)
         for m in messages:
             message = types.APIPipeMessage.parse_obj(m)
-            self.handle_message(message)
+            self.handle_processor_message(message)
         self.registered = True
         return self.registered
 
@@ -192,7 +193,8 @@ class Processor:
         if msg['control'] == 'run':
             self.run()
 
-    def handle_message(self, msg: types.APIPipeMessage):
+    def handle_processor_message(self, msg_json):
+        msg = types.APIPipeMessage.parse_obj(msg_json)
         if msg.type == types.PipeMessageType.Q_UPDATE:
             print("Updating queues")
             qs = types.APIProcQueues.parse_obj(msg.body)
@@ -209,9 +211,15 @@ class Processor:
             print("Termination request")
             self.request_termination = True
 
-    def on_ws_message(self, msg):
-        msg = types.APIPipeMessage(msg)
-        self.handle_message(msg)
+    def handle_pipelines_message(self, msg_json):
+        raise NotImplementedError("Only pipeline object can handle pipeline messages")
+
+    def on_ws_message(self, msg_json):
+        msg = types.APIPipeMessage.parse_obj(msg_json)
+        if msg.scope == PipeEntityType.PROCESSOR:
+            self.handle_processor_message(msg_json)
+        if msg.scope == PipeEntityType.PIPELINE:
+            self.handle_pipelines_message(msg_json)
 
     def get_current_message_data(self):
         if self.proc:

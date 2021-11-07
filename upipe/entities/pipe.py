@@ -15,13 +15,13 @@ class Pipe(Processor):
         self.server_proc = None
         # self.main_block = shared_memory_dict.SharedMemoryDict(name=name, size=1025)
 
-    def handle_message(self, msg: types.APIPipeMessage):
-        super().handle_message(msg)
+    def handle_pipelines_message(self, msg_json):
+        msg = types.APIPipeMessage.parse_obj(msg_json)
         if msg.type == types.PipeMessageType.PIPE_STATUS:
-            msg = types.APIPipeStatusMessage(msg)
-            if msg.status == types.PipeExecutionStatus.COMPLETED:
+            status_msg = types.APIPipeStatusMessage.parse_obj(msg_json)
+            if status_msg.status == types.PipeExecutionStatus.COMPLETED:
                 self._completion_future.set_result(0)
-            if msg.status == types.PipeExecutionStatus.RUNNING:
+            if status_msg.status == types.PipeExecutionStatus.RUNNING:
                 self._start_future.set_result(0)
 
     def send_pipe_action(self, action: types.PipeActionType):
@@ -46,7 +46,7 @@ class Pipe(Processor):
         print(f"{self.name} Registered")
         if not self.node_client.connect():
             raise BrokenPipeError(f"Cant connect pipe : {self.name}")
-        print(f"Pipe {self.name} ready")
+        print(f"Pipe {self.name} pending execution")
         self.send_pipe_action(types.PipeActionType.START)
         self._start_future = asyncio.Future()
         self._completion_future = asyncio.Future()

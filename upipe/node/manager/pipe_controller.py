@@ -1,3 +1,4 @@
+import asyncio
 import time
 from typing import Dict, List
 
@@ -8,6 +9,7 @@ from fastapi import WebSocket
 from ... import types, entities
 from .process_controller import ProcessorController, ProcessorInstance
 from ..client import NodeClient
+from ...types import PipeExecutionStatus
 
 
 class PipeController:
@@ -22,6 +24,11 @@ class PipeController:
         self.node_proc = node_proc
         self.status: types.PipeExecutionStatus = types.PipeExecutionStatus.INIT
         self.name = None
+        self.connection: WebSocket = None
+
+    async def connect_pipe(self, websocket: WebSocket):
+        await websocket.accept()
+        self.connection = websocket
 
     def log_processor_utilization(self, utilization: types.ProcUtilizationEntry):
         proc_name = utilization.proc.name
@@ -119,9 +126,19 @@ class PipeController:
                 continue
             launched += 1
             p.launch_instance()
-        self.status = types.PipeExecutionStatus.RUNNING
         print(f"Started {launched} processors")
-        # self.send_pipe_status(PipeExecutionStatus.RUNNING)
+        loop = asyncio.get_event_loop()
+        loop.create_task(self.set_pipe_status(PipeExecutionStatus.RUNNING))
+
+    async def set_pipe_status(self, status: PipeExecutionStatus):
+        self.status = status
+        msg = types.APIPipeStatusMessage(dest=self.name,
+                                         type=types.PipeMessageType.PIPE_STATUS,
+                                         sender=self.api_def.id,
+                                         status=status,
+                                         pipe_name=self.name,
+                                         scope=types.PipeEntityType.PIPELINE)
+        await self.connection.send_json(msg.dict())
 
     @property
     def scaled_to_maxed(self):
@@ -215,7 +232,8 @@ class PipeController:
         return
 
     def cleanup(self):
-        self.status = types.PipeExecutionStatus.COMPLETED
+        loop = asyncio.get_event_loop()
+        loop.create_task(self.set_pipe_status(PipeExecutionStatus.COMPLETED))
 
     @property
     def api_def(self):

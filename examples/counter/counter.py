@@ -6,8 +6,8 @@ from upipe import Pipe, Processor
 async def main():
     limit = 50000
     config = {"limit": limit}
-    a = Processor('a', entry='examples/counter/a.py', config=config)
-    b = Processor('b', entry='examples/counter/b.py', config=config)
+    a = Processor('a', entry='./a.py', config=config)
+    b = Processor('b', entry='./b.py', config=config)
     pipe = Pipe('plus-one')
     pipe.add(a).add(b)
     await pipe.start()

@@ -186,12 +186,15 @@ class ComputeNode:
         p.load(pipe)
         self._pipes[pipe.name] = p
 
-    async def connect_proc(self, proc_name: str, websocket: WebSocket):
+    async def attach(self, proc_name: str, websocket: WebSocket):
         for pipe_name in self._pipes:
             pipe = self._pipes[pipe_name]
-            await pipe.connect_proc(proc_name, websocket)
+            if proc_name == pipe_name:
+                await pipe.connect_pipe(websocket)
+            else:
+                await pipe.connect_proc(proc_name, websocket)
 
-    async def disconnect_proc(self, proc_name: str, websocket: WebSocket):
+    async def detach(self, proc_name: str, websocket: WebSocket):
         for pipe_name in self._pipes:
             pipe = self._pipes[pipe_name]
             await pipe.disconnect_proc(proc_name)

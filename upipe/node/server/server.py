@@ -97,7 +97,7 @@ msg_counter = 0
 @fast_api.websocket("/ws/connect/{proc_name}")
 async def websocket_endpoint(websocket: WebSocket, proc_name: str):
     global msg_counter
-    await node.connect_proc(proc_name, websocket)
+    await node.attach(proc_name, websocket)
     try:
         while True:
             data = await websocket.receive_text()
@@ -112,7 +112,7 @@ async def websocket_endpoint(websocket: WebSocket, proc_name: str):
             except Exception:
                 raise ValueError("Un supported processor message")
     except WebSocketDisconnect:
-        await node.disconnect_proc(proc_name, websocket)
+        await node.detach(proc_name, websocket)
         # await manager.broadcast(f"Client #{proc_name} left the chat")
 
 
