@@ -11,13 +11,13 @@ from starlette.requests import Request
 
 from upipe.node.manager import ComputeNode
 from upipe import types
-
+from upipe.node.server import view_api
 server_proc_def = types.APIPipeEntity(name="upipe-local-server",
                                       id="upipe-local-server",
                                       type=types.PipeEntityType.SERVER)
 
 fast_api = FastAPI()
-
+fast_api.include_router(view_api.router)
 node = ComputeNode()
 
 
