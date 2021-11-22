@@ -3,7 +3,7 @@ from pydantic.annotated_types import Dict
 
 from .messages import APIPipeMessage
 from .processor import APIProcessor
-from .queue import APIQueue
+from .mem_queue import APIQueue
 from .base import APIPipeEntity, PipeEntityType
 
 
