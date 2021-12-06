@@ -6,6 +6,8 @@ from threading import Thread
 import psutil
 from colorama import Fore, Back, Style
 
+from upipe.types import UPipeEntityType
+
 
 class InstanceType(IntEnum):
     PROCESS = 1
@@ -13,10 +15,11 @@ class InstanceType(IntEnum):
 
 
 class InstanceState(IntEnum):
-    READY = 0
     LAUNCHED = 1
-    RUNNING = 2
-    DONE = 3
+    READY = 2
+    RUNNING = 3
+    PAUSED = 4
+    DONE = 5
 
 
 class ProcessorInstance:
@@ -27,8 +30,8 @@ class ProcessorInstance:
 
     def __init__(self, proc, process, instance_type=InstanceType.SUB_PROCESS, stdout_q=None):
         self.proc = proc
-        self.process = process
-        self.instance_id = -2
+        self.root_process = process
+        self.running_process = None
         self.instance_type = instance_type
         self.stdout_q = stdout_q
         self.color_index = ProcessorInstance.next_color_index
@@ -39,9 +42,17 @@ class ProcessorInstance:
         thread = Thread(target=self.monitor, daemon=True)
         thread.start()
 
+    def register(self, pid: int):
+        self.state = InstanceState.READY
+        if self.pid == pid:
+            return
+        if self.is_child_process(pid):
+            return
+        raise BrokenPipeError(f"Can not register PID to instance {self.name}")
+
     def handle_exit(self):
         if self.instance_type == InstanceType.SUB_PROCESS:
-            lines = self.process.stdout.readlines()
+            lines = self.root_process.stdout.readlines()
             for line in lines:
                 self.stdout_q.write(line)
         self.state = InstanceState.DONE
@@ -52,8 +63,8 @@ class ProcessorInstance:
                 self.handle_exit()
                 break
             if self.instance_type == InstanceType.SUB_PROCESS:
-                if self.process.stdout:
-                    self.stdout_q.write(self.process.stdout.readline())
+                if self.root_process.stdout:
+                    self.stdout_q.write(self.root_process.stdout.readline())
             time.sleep(1)
 
     @property
@@ -65,9 +76,17 @@ class ProcessorInstance:
         return self.proc.name
 
     @property
+    def proc_id(self):
+        return self.proc.id
+
+    @property
+    def pid(self) -> int:
+        return self.root_process.pid
+
+    @property
     def cpu(self):
         try:
-            p = psutil.Process(self.process.pid)
+            p = psutil.Process(self.pid)
             return p.cpu_percent()
         except psutil.NoSuchProcess:
             return 0
@@ -75,7 +94,7 @@ class ProcessorInstance:
     @property
     def memory(self):
         try:
-            p = psutil.Process(self.process.pid)
+            p = psutil.Process(self.pid)
             return p.memory_percent()
         except psutil.NoSuchProcess:
             return 0
@@ -83,9 +102,9 @@ class ProcessorInstance:
     @property
     def exit_code(self):
         if self.instance_type == InstanceType.SUB_PROCESS:
-            return self.process.poll()
+            return self.root_process.poll()
         if self.instance_type == InstanceType.PROCESS:
-            return self.process.exitcode
+            return self.root_process.exitcode
         return None
 
     def read_stdout_line(self):
@@ -97,7 +116,7 @@ class ProcessorInstance:
             line = line.decode().strip()
         if not line or line == '\n' or len(line) == 0:
             return None
-        line = f"{self.name}({self.instance_id})" + self.color[0] + self.color[1] + ">>>" + Style.RESET_ALL + f"{line}"
+        line = f"{self.name}({self.pid})" + self.color[0] + self.color[1] + ">>>" + Style.RESET_ALL + f"{line}"
         return line
 
     @property
@@ -105,6 +124,17 @@ class ProcessorInstance:
         return self.state == InstanceState.DONE
 
     @property
+    def is_launched(self):
+        return self.state == InstanceState.LAUNCHED
+
+    @property
     def api_def(self):
         from ...types import APIProcessorInstance
-        return APIProcessorInstance(**self.proc, instance_id=self.instance_id, pid=self.process.pid)
+        return APIProcessorInstance(**self.proc, pid=self.pid, id=self.pid, type=UPipeEntityType.PROCESSOR_INSTANCE)
+
+    def is_child_process(self, pid: int):
+        child_processes = psutil.Process(self.pid).children(recursive=True)
+        for p in child_processes:
+            if p.pid == pid:
+                return True
+        return False

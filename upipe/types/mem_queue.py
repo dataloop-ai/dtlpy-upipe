@@ -2,11 +2,11 @@ from pydantic import BaseModel
 from pydantic.annotated_types import Dict
 from pydantic.class_validators import Optional
 
-from .base import APIPipeEntity, PipeEntityType
+from .base import UPipeEntity, UPipeEntityType
 
 
-class APIQueue(APIPipeEntity):
-    type: PipeEntityType = PipeEntityType.QUEUE
+class APIQueue(UPipeEntity):
+    type: UPipeEntityType = UPipeEntityType.QUEUE
     from_p: str
     to_p: str
     size: int

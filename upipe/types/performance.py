@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from pydantic.class_validators import Optional
 
-from . import APIPipeEntity
+from . import UPipeEntity
 
 node_server = None
 
@@ -16,7 +16,7 @@ class ProcUtilizationEntry(BaseModel):
     memory: float
     pending: Optional[int]
     time: int
-    proc: APIPipeEntity
+    proc: UPipeEntity
 
 
 class QStatus(BaseModel):

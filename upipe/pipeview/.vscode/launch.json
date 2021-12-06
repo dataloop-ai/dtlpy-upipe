@@ -11,7 +11,7 @@
             "skipFiles": [
                 "<node_internals>/**"
             ],
-            "program": "${workspaceFolder}\\src\\models\\interfaces\\generate.ts",
+            "program": "${workspaceFolder}\\src\\models\\defs\\generate.ts",
             "outFiles": [
                 "${workspaceFolder}/**/*.js"
             ]

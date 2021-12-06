@@ -19,23 +19,23 @@ import {
   computed,
   ref,
   toRef,
-  Ref,
-} from 'vue';
-import { Todo, Meta } from './models';
-
-function useClickCount() {
-  const clickCount = ref(0);
-  function increment() {
+  Ref
+} from 'vue'
+import { Todo, Meta } from './models'
+    
+function useClickCount () {
+  const clickCount = ref(0)
+  function increment () {
     clickCount.value += 1
-    return clickCount.value;
+    return clickCount.value
   }
 
-  return { clickCount, increment };
+  return { clickCount, increment }
 }
 
-function useDisplayTodo(todos: Ref<Todo[]>) {
-  const todoCount = computed(() => todos.value.length);
-  return { todoCount };
+function useDisplayTodo (todos: Ref<Todo[]>) {
+  const todoCount = computed(() => todos.value.length)
+  return { todoCount }
 }
 
 export default defineComponent({
@@ -57,8 +57,8 @@ export default defineComponent({
       type: Boolean
     }
   },
-  setup(props) {
-    return { ...useClickCount(), ...useDisplayTodo(toRef(props, 'todos')) };
-  },
-});
+  setup (props) {
+    return { ...useClickCount(), ...useDisplayTodo(toRef(props, 'todos')) }
+  }
+})
 </script>

@@ -8,6 +8,7 @@ import sys
 import types
 from enum import IntEnum
 from multiprocessing.queues import Queue
+from typing import List
 
 from fastapi import WebSocket
 
@@ -59,9 +60,9 @@ class ProcessorController:
 
     def __init__(self, proc: up_types.APIProcessor, queues: [entities.MemQueue]):
         self.proc = proc
-        self._instances = []
+        self._instances: List[ProcessorInstance] = []
         self._interpreter_path = sys.executable
-        self._completed = False
+        self.status: up_types.ProcessorExecutionStatus = up_types.ProcessorExecutionStatus.INIT
         self._queues: [entities.MemQueue] = queues
         processor_memory_name = f"processor_control:{self.name}"
         size = entities.Processor.SHARED_MEM_SIZE
@@ -77,13 +78,16 @@ class ProcessorController:
     async def disconnect_proc(self):
         self.connection = None
 
-    def process_message(self, proc_msg: up_types.APIPipeMessage):
+    def process_message(self, proc_msg: up_types.UPipeMessage):
         pass
 
     def on_complete(self, with_errors):
-        self._completed = True
+        self.status = up_types.ProcessorExecutionStatus.COMPLETED
 
     def scale_down(self):
+        pass
+
+    def pause(self):
         pass
 
     def launch_instance(self):
@@ -106,6 +110,7 @@ class ProcessorController:
         else:
             process = subprocess.Popen([interpreter, self.proc.entry], stdout=subprocess.PIPE)
         runner = ProcessorInstance(self.proc, process, instance_type, stdout_q)
+        print(f"{self.proc.name} instance launched, pid: {runner.pid}")
         self._instances.append(runner)
 
     def register_instance(self):
@@ -170,7 +175,7 @@ class ProcessorController:
 
     @property
     def available_instances(self):
-        if self._completed:
+        if self.status == up_types.ProcessorExecutionStatus.COMPLETED:
             return 0
         if not self.executable:
             return 0
@@ -182,3 +187,11 @@ class ProcessorController:
     @property
     def instances_number(self):
         return len(self._instances)
+
+    def is_my_process(self, pid: int):
+        for i in self.instances:
+            if i.pid == pid:
+                return True
+            if i.is_child_process(pid):
+                return True
+        return False

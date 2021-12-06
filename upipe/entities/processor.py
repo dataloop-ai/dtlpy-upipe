@@ -12,7 +12,7 @@ from aiohttp import ClientConnectorError
 from colorama import init, Fore
 
 from .. import node, types, entities
-from ..types import PipeEntityType
+from ..types import UPipeEntityType
 
 init(autoreset=True)
 
@@ -69,19 +69,13 @@ class Processor:
         self.pid = os.getpid()
         self.exe_name = os.path.basename(os.path.abspath(sys.modules['__main__'].__file__))
         self.proc_id = f"{self.name}:{self.pid}"
-        self.node_client = node.NodeClient(self.name, self.on_ws_message)
         self.execution_status = ProcessorExecutionStatus.RUNNING
         self.consumer_next_q_index = 0
         self.interpreter = sys.executable
         self.request_termination = False  # called from manager to notify its over
-        # self.smd = shared_memory_dict.SharedMemoryDict(name=name, size=1025)
+        self.type = types.UPipeEntityType.PROCESSOR
+        self.node_client = node.NodeClient(types.UPipeEntityType.PROCESSOR, self.id, self.on_ws_message)
         atexit.register(self.cleanup)
-        # processor_memory_name = f"processor_control:{self.name}"
-        # try:
-        #     self.mem = shared_memory.SharedMemory(name=processor_memory_name, create=True, size=self.SHARED_MEM_SIZE)
-        #     self.mem.buf[:] = bytearray(self.SHARED_MEM_SIZE)
-        # except FileExistsError:
-        #     self.mem = shared_memory.SharedMemory(name=processor_memory_name, size=self.SHARED_MEM_SIZE)
 
     # noinspection PyBroadException
     def cleanup(self):
@@ -121,8 +115,10 @@ class Processor:
                     print("Waiting for node controller ...")
                     printed = True
                 await asyncio.sleep(5)
+        if data['config']:
+            self.config = data['config']
         for m in messages:
-            message = types.APIPipeMessage.parse_obj(m)
+            message = types.UPipeMessage.parse_obj(m)
             self.handle_processor_message(message)
         self.registered = True
         return self.registered
@@ -180,10 +176,10 @@ class Processor:
 
     def add_q(self, q: types.APIQueue):
         if self.q_exist(q):
-            raise BrokenPipeError(f"Q already added to proc {self.name}")
-        if q.to_p == self.name and not self.in_q_exist(q.id):
+            raise BrokenPipeError(f"Q already added to proc {self.id}")
+        if q.to_p == self.id and not self.in_q_exist(q.id):
             self.in_qs.append(entities.MemQueue(q))
-        if q.from_p == self.name and not self.out_q_exist(q.id):
+        if q.from_p == self.id and not self.out_q_exist(q.id):
             self.out_qs.append(entities.MemQueue(q))
 
     def run(self):
@@ -194,20 +190,20 @@ class Processor:
             self.run()
 
     def handle_processor_message(self, msg_json):
-        msg = types.APIPipeMessage.parse_obj(msg_json)
-        if msg.type == types.PipeMessageType.Q_UPDATE:
+        msg = types.UPipeMessage.parse_obj(msg_json)
+        if msg.type == types.UPipeMessageType.Q_UPDATE:
             print("Updating queues")
             qs = types.APIProcQueues.parse_obj(msg.body)
             for q in qs.queues:
                 queue = qs.queues[q]
                 self.add_q(queue)
-        if msg.type == types.PipeMessageType.CONFIG_UPDATE:
+        if msg.type == types.UPipeMessageType.CONFIG_UPDATE:
             print("Updating config")
             self.config = msg.body
-        if msg.type == types.PipeMessageType.REGISTRATION_INFO:
+        if msg.type == types.UPipeMessageType.REGISTRATION_INFO:
             print("Updating registration info")
             self.instance_id = msg.body['instance_id']
-        if msg.type == types.PipeMessageType.PROC_TERMINATE:
+        if msg.type == types.UPipeMessageType.PROC_TERMINATE:
             print("Termination request")
             self.request_termination = True
 
@@ -215,10 +211,10 @@ class Processor:
         raise NotImplementedError("Only pipeline object can handle pipeline messages")
 
     def on_ws_message(self, msg_json):
-        msg = types.APIPipeMessage.parse_obj(msg_json)
-        if msg.scope == PipeEntityType.PROCESSOR:
+        msg = types.UPipeMessage.parse_obj(msg_json)
+        if msg.scope == UPipeEntityType.PROCESSOR:
             self.handle_processor_message(msg_json)
-        if msg.scope == PipeEntityType.PIPELINE:
+        if msg.scope == UPipeEntityType.PIPELINE:
             self.handle_pipelines_message(msg_json)
 
     def get_current_message_data(self):
@@ -282,13 +278,15 @@ class Processor:
 
     @property
     def config_hash(self):
-        if len(self.config):
-            return ""
+        if len(self.config) == 0:
+            return None
         config_md5 = hashlib.md5(json.dumps(self.config, sort_keys=True).encode('utf-8')).hexdigest()
         return config_md5
 
     @property
     def id(self):
+        if not self.config_hash:
+            return f"{self.name}"
         return f"{self.name}:{self.config_hash}"
 
     @property
@@ -302,6 +300,6 @@ class Processor:
                                   entry=self.entry,
                                   function=self.function,
                                   interpreter=self.interpreter,
-                                  type=types.PipeEntityType.PROCESSOR,
+                                  type=self.type,
                                   settings=self.settings,
                                   config=self.config)

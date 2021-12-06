@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import pickle
 import platform
 import time
@@ -10,6 +11,7 @@ import aiohttp
 import websocket
 from aiohttp import FormData, ClientSession
 
+from upipe.types import UPipeEntity, UPipeEntityType
 from .. import types
 
 counter = 0
@@ -64,11 +66,12 @@ def retry(times: int, exceptions=()):
                         return content.data, content.messages
                     else:
                         raise AssertionError(f"Error on {func} : {content.messages}")
-                except Exception:
+                except Exception as e:
                     print(
                         'Exception thrown when attempting to run %s, attempt '
                         '%d of %d' % (func.__name__, attempt, times)
                     )
+                    print(str(e))
                 attempt += 1
                 await asyncio.sleep(1)
             raise TimeoutError(f"Error on server access {func}")
@@ -83,9 +86,10 @@ class NodeClient:
     sessions: Dict[str, ClientSession] = {}
     _server_session: ClientSession = None
 
-    def __init__(self, proc_name, message_handler=None, server_base_url='localhost:852'):
+    def __init__(self, agent_type: UPipeEntity, agent_id: str, message_handler=None, server_base_url='localhost:852'):
         self.register_timeout = 5
-        self.proc_name = proc_name
+        self.agent_type = agent_type
+        self.agent_id = agent_id
         self.message_handler = message_handler
         self.socket: websocket.WebSocketApp = None
         self.connected = False
@@ -123,16 +127,17 @@ class NodeClient:
         return await self.server_session.get(ping_url)
 
     @retry(times=3)
-    async def register_proc(self, proc: types.APIPipeEntity):
-        register_url = f"http://{self.server_base_url}/register_proc"
+    async def register_proc(self, proc: types.UPipeEntity):
+        pid = os.getpid()
+        register_url = f"http://{self.server_base_url}/register_proc/{pid}"
         return await self.server_session.post(register_url, json=proc.dict())
 
     @retry(times=10)
-    async def register_pipe(self, pipe: types.APIPipe):
-        register_url = f"http://{self.server_base_url}/register_pipe"
+    async def load_pipe(self, pipe: types.APIPipe):
+        register_url = f"http://{self.server_base_url}/load_pipe"
         return await self.server_session.post(register_url, json=pipe.dict())
 
-    def send_message(self, msg: types.APIPipeMessage):
+    def send_message(self, msg: types.UPipeMessage):
         if not self.socket:
             return
         self.socket.send(msg.json())
@@ -142,12 +147,12 @@ class NodeClient:
         # noinspection PyBroadException
         try:
             json_msg = json.loads(message)
-            msg = types.APIPipeMessage.from_json(json_msg)
+            msg = types.UPipeMessage.from_json(json_msg)
             if self.message_handler:
                 self.message_handler(json_msg)
         except Exception as e:
-            print(f"Error on message processing :{self.proc_name}:{str(e)}")
-            raise ConnectionError(f"Error on socket message: {self.proc_name}")
+            print(f"Error on message processing :{self.agent_id}:{str(e)}")
+            raise ConnectionError(f"Error on socket message: {self.agent_id}")
 
     async def get_session(self, q):
         if q.host not in self.sessions:
@@ -178,7 +183,11 @@ class NodeClient:
 
     @property
     def ws_url(self):
-        return f"ws://{self.server_base_url}/ws/connect/{self.proc_name}"
+        if self.agent_type == UPipeEntityType.PROCESSOR:
+            pid = os.getpid()
+            return f"ws://{self.server_base_url}/ws/proc/{pid}"
+        if self.agent_type == UPipeEntityType.PIPELINE:
+            return f"ws://{self.server_base_url}/ws/pipe/{self.agent_id}"
 
     def on_message(self, ws, message):
         self.handle_message(message)
@@ -192,7 +201,7 @@ class NodeClient:
         print("### closed ###")
 
     def on_open(self, ws):
-        print(f"{self.proc_name} connected")
+        print(f"{self.agent_id} connected")
         self.socket = ws
         self.connected = True
 

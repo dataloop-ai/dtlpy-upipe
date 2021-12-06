@@ -1,10 +1,10 @@
 from enum import IntEnum
 from pydantic.annotated_types import Dict
 
-from .messages import APIPipeMessage
+from .messages import UPipeMessage
 from .processor import APIProcessor
 from .queue import APIQueue
-from .base import APIPipeEntity, PipeEntityType
+from .base import UPipeEntity, UPipeEntityType
 
 
 class PipeExecutionStatus(IntEnum):
@@ -18,16 +18,18 @@ class PipeExecutionStatus(IntEnum):
 
 class PipeActionType(IntEnum):
     START = 1
+    RESTART = 2
+    PAUSE = 3
 
 
-class APIPipe(APIPipeEntity):
+class APIPipe(UPipeEntity):
     name: str
     processors: Dict[str, APIProcessor] = {}
     queues: Dict[str, APIQueue] = {}
-    type: PipeEntityType = PipeEntityType.PIPELINE
+    type: UPipeEntityType = UPipeEntityType.PIPELINE
 
 
-class APIPipeControlMessage(APIPipeMessage):
+class APIPipeControlMessage(UPipeMessage):
     pipe_name: str
     action: PipeActionType
 
@@ -36,10 +38,17 @@ class APIPipeControlMessage(APIPipeMessage):
         return APIPipeControlMessage.parse_obj(json)
 
 
-class APIPipeStatusMessage(APIPipeMessage):
+class APIPipeStatusMessage(UPipeMessage):
     pipe_name: str
     status: PipeExecutionStatus
 
     @staticmethod
     def from_json(json: dict):
         return APIPipeStatusMessage.parse_obj(json)
+
+
+class PipelineAlreadyExist(Exception):
+    def __init__(self, pipeline_id: str, message=f"Pipeline already exist"):
+        self.pipeline_id = pipeline_id
+        self.message = message=f"Pipeline {pipeline_id} already exist"
+        super().__init__(self.message)

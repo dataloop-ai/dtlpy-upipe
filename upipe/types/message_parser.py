@@ -1,11 +1,11 @@
-from .messages import APIPipeMessage, PipeMessageType
+from .messages import UPipeMessage, UPipeMessageType
 from .pipe import APIPipeControlMessage, APIPipeStatusMessage
 
 
-def parse_pipe_message(json: APIPipeMessage):
-    msg: APIPipeMessage = APIPipeMessage.parse_obj(json)
-    if msg.type == PipeMessageType.PIPE_CONTROL:
+def parse_pipe_message(json: UPipeMessage):
+    msg: UPipeMessage = UPipeMessage.parse_obj(json)
+    if msg.type == UPipeMessageType.PIPE_CONTROL:
         return APIPipeControlMessage.parse_obj(json)
-    if msg.type == PipeMessageType.PIPE_STATUS:
+    if msg.type == UPipeMessageType.PIPE_STATUS:
         return APIPipeStatusMessage.parse_obj(json)
     return msg

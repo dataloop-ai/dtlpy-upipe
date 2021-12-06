@@ -3,7 +3,7 @@ from enum import IntEnum
 from pydantic import BaseModel
 
 
-class PipeEntityType(IntEnum):
+class UPipeEntityType(IntEnum):
     PROCESSOR = 1
     PROCESSOR_INSTANCE = 2
     PROCESS = 3
@@ -14,10 +14,10 @@ class PipeEntityType(IntEnum):
     QUEUE = 8
 
 
-class APIPipeEntity(BaseModel):
+class UPipeEntity(BaseModel):
     id: str
     name: str
-    type: PipeEntityType
+    type: UPipeEntityType
     settings: dict = {}
     config: dict = {}
 

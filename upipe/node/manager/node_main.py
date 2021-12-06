@@ -6,7 +6,7 @@ import sys
 import os
 import time
 from enum import IntEnum
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union
 
 import numpy as np
 import requests
@@ -17,8 +17,9 @@ from ... import entities, types, utils
 from .node_config import NodeConfig
 from ..client import NodeClient
 from .pipe_controller import PipeController
-from .process_controller import ProcessorController
 from .node_utils import kill_em_all, get_process_by_path, count_process_by_path
+from ...types import UPipeEntityType
+from ...types.pipe import PipelineAlreadyExist
 
 init(autoreset=True)
 
@@ -70,37 +71,39 @@ class ComputeNode:
         self.node_usage_history: List[types.NodeUtilizationEntry] = []
         self.last_scale_time = time.time()
         self.scale_block_time = 10  # time to wait before scaling again, seconds
-        self._pipes: Dict[str, PipeController] = {}
+        self.pipe_controllers: Dict[str, PipeController] = {}
         self._node_ready = False
-        self.node_client = None
-        self.node_client = NodeClient(NODE_MANAGER_PROC_NAME,
-                                      self.on_ws_message,
-                                      server_base_url=self.server_base_url())
 
-    def get_proc_queues(self, proc_name: str) -> types.APIProcQueues:
-        queues = types.APIProcQueues(proc_name=proc_name)
-        for p in self._pipes:
-            pipe: PipeController = self._pipes[p]
-            for q in pipe.queues:
-                api_q: types.APIQueue = pipe.queues[q].queue_def
-                queues.queues[api_q.id] = api_q
+    def get_proc_queues(self, proc_id: str) -> types.APIProcQueues:
+        queues = types.APIProcQueues(proc_id=proc_id)
+        for p in self.pipe_controllers:
+            pipe: PipeController = self.pipe_controllers[p]
+            for qid in pipe.queues:
+                queue = pipe.queues[qid]
+                if queue.from_p == proc_id or queue.to_p == proc_id:
+                    api_q: types.APIQueue = queue.queue_def
+                    queues.queues[api_q.id] = api_q
         return queues
 
-    def register_proc_instance(self, proc_name: str) -> Tuple[int, dict]:
-        launched_processor = None
-        for p in self._pipes:
-            pipe: PipeController = self._pipes[p]
-            if proc_name in pipe.processors:
-                processor: ProcessorController = pipe.processors[proc_name]
-                if len(processor.launched_instances) == 0:
-                    continue
-                launched_processor = processor
+    def register_launched_instance(self, pid: int, proc: types.UPipeEntity) -> Tuple[int, dict]:
+        from .. import ProcessorInstance  ## TODO, circular dependency to resovle
+        launched_processor: Union[ProcessorInstance, None] = None
+        for p in self.pipe_controllers:
+            pipe: PipeController = self.pipe_controllers[p]
+            instance = pipe.get_instance_by_pid(pid)
+            if instance is None:
+                continue
+            if not instance.is_launched:
+                raise BrokenPipeError("Instance already registered: {!r} ({})".format(instance.name, instance.pid))
+            launched_processor = instance
+            break
         if not launched_processor:
-            available_processors = ', '.join([key for pipe in self._pipes.values() for key in pipe.processors.keys()])
-            raise BrokenPipeError("Missing launched instance name: {!r}. available: {}".format(proc_name,
-                                                                                               available_processors))
-        new_instance_id = launched_processor.register_instance()
-        return new_instance_id, launched_processor.proc.config
+            available_processors = ', '.join(
+                [key for pipe in self.pipe_controllers.values() for key in pipe.processors.keys()])
+            print("Instance launch error: {!r}. available: {}".format(proc.id, available_processors))
+            raise BrokenPipeError("Missing launched instance pid : {!r}".format(pid))
+        launched_processor.register(pid)
+        return launched_processor
 
     @staticmethod
     def launch_server(host='localhost', port=852):
@@ -181,37 +184,36 @@ class ComputeNode:
         node_process = get_process_by_path(ComputeNode.node_path)
         return node_process
 
-    def register_pipe(self, pipe: types.APIPipe):
-        p = PipeController(self.node_client, self.proc_def)
+    def load_pipe(self, pipe: types.APIPipe):
+        if pipe.id in self.pipe_controllers:
+            raise PipelineAlreadyExist(pipe.id)
+        p = PipeController(self.proc_def)
         p.load(pipe)
-        self._pipes[pipe.name] = p
+        self.pipe_controllers[pipe.id] = p
 
-    async def attach(self, proc_name: str, websocket: WebSocket):
-        for pipe_name in self._pipes:
-            pipe = self._pipes[pipe_name]
-            if proc_name == pipe_name:
-                await pipe.connect_pipe(websocket)
-            else:
-                await pipe.connect_proc(proc_name, websocket)
+    async def attach_proc(self, pid: int, websocket: WebSocket):
+        for pipe_name in self.pipe_controllers:
+            pipe = self.pipe_controllers[pipe_name]
+            await pipe.connect_proc(pid, websocket)
 
-    async def detach(self, proc_name: str, websocket: WebSocket):
-        for pipe_name in self._pipes:
-            pipe = self._pipes[pipe_name]
-            await pipe.disconnect_proc(proc_name)
+    async def attach_pipe(self, pipe_id: str, websocket: WebSocket):
+        if pipe_id in self.pipe_controllers:
+            pipe = self.pipe_controllers[pipe_id]
+            await pipe.connect_pipe(websocket)
 
-    def process_message(self, proc_msg: types.APIPipeMessage):
+    def process_message(self, proc_msg: types.UPipeMessage):
         try:
-            if proc_msg.scope == types.PipeEntityType.PIPELINE:
-                if proc_msg.dest not in self._pipes:
+            if proc_msg.scope == types.UPipeEntityType.PIPELINE:
+                if proc_msg.dest not in self.pipe_controllers:
                     raise IndexError("Message : Pipe does not exist")
-                self._pipes[proc_msg.dest].process_message(proc_msg)
-            if proc_msg.scope == types.PipeEntityType.PROCESSOR:
-                for pipe_name in self._pipes:
-                    pipe = self._pipes[pipe_name].process_message(proc_msg)
+                self.pipe_controllers[proc_msg.dest].process_message(proc_msg)
+            if proc_msg.scope == types.UPipeEntityType.PROCESSOR:
+                for pipe_name in self.pipe_controllers:
+                    pipe = self.pipe_controllers[pipe_name].process_message(proc_msg)
         except Exception as e:
             print(f"Error on node message : {str(e)}")
 
-    def on_ws_message(self, proc_msg: types.APIPipeMessage):
+    def on_ws_message(self, proc_msg: types.UPipeMessage):
         self.process_message(proc_msg)
 
     def connect(self):
@@ -219,8 +221,8 @@ class ComputeNode:
         self._node_ready = True
 
     async def push_q(self, q: types.APIQueue, df: entities.DataFrame):
-        for pipe_name in self._pipes:
-            pipe = self._pipes[pipe_name]
+        for pipe_name in self.pipe_controllers:
+            pipe = self.pipe_controllers[pipe_name]
             if q.id in pipe.queues:
                 queue: entities.MemQueue = pipe.queues[q.id]
                 return await queue.put(df)
@@ -240,36 +242,36 @@ class ComputeNode:
 
     def check_autoscale(self):
         # check no active scaling
-        for pipe_name in self._pipes:
-            p = self._pipes[pipe_name]
+        for pipe_name in self.pipe_controllers:
+            p = self.pipe_controllers[pipe_name]
             if p.is_scaling:
                 return
         # check scale down
         if self.is_scale_down_required():
             pipes_available_to_scale_down = []
             self.last_scale_time = time.time()
-            for pipe_name in self._pipes:
-                p = self._pipes[pipe_name]
+            for pipe_name in self.pipe_controllers:
+                p = self.pipe_controllers[pipe_name]
                 if p.is_scaled:
                     pipes_available_to_scale_down.append(pipe_name)
             if len(pipes_available_to_scale_down) == 0:
                 return
             pipe_to_scale_down = pipes_available_to_scale_down[0]
-            self._pipes[pipe_to_scale_down].scale_down()
+            self.pipe_controllers[pipe_to_scale_down].scale_down()
             self.last_scale_time = time.time()
             return
         # check scale up
         if not self.is_scale_up_possible():
             return
         pipes_available_to_scale = []
-        for pipe_name in self._pipes:
-            p = self._pipes[pipe_name]
+        for pipe_name in self.pipe_controllers:
+            p = self.pipe_controllers[pipe_name]
             if not p.scaled_to_maxed:
                 pipes_available_to_scale.append(pipe_name)
         if len(pipes_available_to_scale) == 0:
             return
         pipe_to_scale = pipes_available_to_scale[0]
-        self._pipes[pipe_to_scale].scale_up()
+        self.pipe_controllers[pipe_to_scale].scale_up()
         self.last_scale_time = time.time()
 
     def log_node_utilization(self):
@@ -279,8 +281,8 @@ class ComputeNode:
         self.node_usage_history.append(node_usage)
         while len(self.node_usage_history) > self.NODE_USAGE_HISTORY_LIMIT:
             del self.node_usage_history[0]
-        for pipe_name in self._pipes:
-            p = self._pipes[pipe_name]
+        for pipe_name in self.pipe_controllers:
+            p = self.pipe_controllers[pipe_name]
             p.log_pipe_utilization()
 
     def is_scale_down_required(self):
@@ -322,7 +324,7 @@ class ComputeNode:
     #     self.node_client.send_message(status_message)
 
     def monitor_pipe(self, pipe_name):
-        pipe = self._pipes[pipe_name]
+        pipe = self.pipe_controllers[pipe_name]
         running_instances = 0
         for proc_name in pipe.processors:
             p = pipe.processors[proc_name]
@@ -346,8 +348,8 @@ class ComputeNode:
     @property
     def running_pipes_count(self):
         count = 0
-        for pipe_name in self._pipes:
-            pipe: PipeController = self._pipes[pipe_name]
+        for pipe_name in self.pipe_controllers:
+            pipe: PipeController = self.pipe_controllers[pipe_name]
             if pipe.running:
                 count += 1
         return count
@@ -363,8 +365,8 @@ class ComputeNode:
             await asyncio.sleep(1)
             if self.running_pipes_count == 0:
                 continue
-            for pipe_name in self._pipes:
-                pipe = self._pipes[pipe_name]
+            for pipe_name in self.pipe_controllers:
+                pipe = self.pipe_controllers[pipe_name]
                 running_instances = self.monitor_pipe(pipe_name)
                 if running_instances == 0:
                     print(Fore.CYAN + Back.GREEN + f"Pipe {pipe_name} completed ...")
@@ -376,10 +378,11 @@ class ComputeNode:
 
     @property
     def api_def(self):
-        return types.APINode(name=self.name, host_name=self.host_name)
+        return types.APINode(id=self.name, type=UPipeEntityType.NODE, controller=False, name=self.name,
+                             host_name=self.host_name)
 
     @property
     def proc_def(self):
-        return types.APIPipeEntity(name=NODE_MANAGER_PROC_NAME,
-                                   id=NODE_MANAGER_PROC_NAME,
-                                   type=types.PipeEntityType.NODE)
+        return types.UPipeEntity(name=NODE_MANAGER_PROC_NAME,
+                                 id=NODE_MANAGER_PROC_NAME,
+                                 type=types.UPipeEntityType.NODE)

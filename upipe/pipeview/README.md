@@ -1,6 +1,6 @@
-# PipeView (pipeview)
+# uPipe View (pipeview)
 
-micro pipe monitor and debug
+a viewer and controller for upipe lines
 
 ## Install the dependencies
 ```bash

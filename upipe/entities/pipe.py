@@ -10,14 +10,16 @@ class Pipe(Processor):
 
     def __init__(self, name):
         Processor.__init__(self, name)
+        self.node_client = node.NodeClient(types.UPipeEntityType.PIPELINE, name, self.on_ws_message)
+        self.type = types.UPipeEntityType.PIPELINE
         self._completion_future: asyncio.Future = asyncio.Future()
         self._start_future: asyncio.Future = asyncio.Future()
         self.server_proc = None
         # self.main_block = shared_memory_dict.SharedMemoryDict(name=name, size=1025)
 
     def handle_pipelines_message(self, msg_json):
-        msg = types.APIPipeMessage.parse_obj(msg_json)
-        if msg.type == types.PipeMessageType.PIPE_STATUS:
+        msg = types.UPipeMessage.parse_obj(msg_json)
+        if msg.type == types.UPipeMessageType.PIPE_STATUS:
             status_msg = types.APIPipeStatusMessage.parse_obj(msg_json)
             if status_msg.status == types.PipeExecutionStatus.COMPLETED:
                 self._completion_future.set_result(0)
@@ -26,26 +28,29 @@ class Pipe(Processor):
 
     def send_pipe_action(self, action: types.PipeActionType):
         msg = types.APIPipeControlMessage(dest=self.name,
-                                          type=types.PipeMessageType.PIPE_CONTROL,
+                                          type=types.UPipeMessageType.PIPE_CONTROL,
                                           sender=self.processor_def.id,
                                           action=action,
                                           pipe_name=self.name,
-                                          scope=types.PipeEntityType.PIPELINE)
+                                          scope=types.UPipeEntityType.PIPELINE)
         self.node_client.send_message(msg)
 
-    async def register(self):
-        proc, messages = await self.node_client.register_pipe(self.pipe_def)
-        self.server_proc = types.APIPipeEntity.parse_obj(proc)
+    async def load_to_server(self):
+        proc, messages = await self.node_client.load_pipe(self.pipe_def)
+        self.server_proc = types.UPipeEntity.parse_obj(proc)
         return self.server_proc
 
-    async def start(self):
+    async def load(self):
         node.start_server()
         print(f"Starting pipe {self.name}")
-        if not await self.register():
-            raise BrokenPipeError(f"Cant register pipe : {self.name}")
+        if not await self.load_to_server():
+            raise BrokenPipeError(f"Cant load pipe : {self.name}")
         print(f"{self.name} Registered")
         if not self.node_client.connect():
             raise BrokenPipeError(f"Cant connect pipe : {self.name}")
+
+    async def start(self):
+        await self.load()
         print(f"Pipe {self.name} pending execution")
         self.send_pipe_action(types.PipeActionType.START)
         self._start_future = asyncio.Future()
@@ -69,13 +74,13 @@ class Pipe(Processor):
 
         def map_proc(processor: Processor):
             proc_def = processor.processor_def
-            pipe_api_def.processors[proc_def.name] = proc_def
+            pipe_api_def.processors[proc_def.id] = proc_def
             for child in processor.children:
-                qid = f"{processor.name}:{child.name}"
+                qid = f"{processor.id}->{child.id}"
                 host = None
                 if child.processor_def.settings.host:
                     host = child.processor_def.settings.host
-                q_def = types.APIQueue(id=qid, name=qid, from_p=processor.name, to_p=child.name,
+                q_def = types.APIQueue(id=qid, name=qid, from_p=processor.id, to_p=child.id,
                                        size=child.input_buffer_size,
                                        host=host)
                 pipe_api_def.queues[qid] = q_def

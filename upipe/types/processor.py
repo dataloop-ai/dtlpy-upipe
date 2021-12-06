@@ -1,7 +1,16 @@
+from enum import IntEnum
+
 from pydantic import BaseModel
 from pydantic.class_validators import Optional
-from .base import PipeEntityType, APIPipeEntity
+from .base import UPipeEntityType, UPipeEntity
 
+
+class ProcessorExecutionStatus(IntEnum):
+    INIT = 1
+    READY = 3
+    PAUSED = 4
+    RUNNING = 5
+    COMPLETED = 6
 
 class APIProcSettings(BaseModel):
     priority: int = 1
@@ -10,8 +19,8 @@ class APIProcSettings(BaseModel):
     host: Optional[str] = None
 
 
-class APIProcessor(APIPipeEntity):
-    type: PipeEntityType = PipeEntityType.PROCESSOR
+class APIProcessor(UPipeEntity):
+    type: UPipeEntityType = UPipeEntityType.PROCESSOR
     entry: Optional[str]
     function: Optional[str]
     interpreter: Optional[str]
@@ -21,11 +30,11 @@ class APIProcessor(APIPipeEntity):
         arbitrary_types_allowed = True
 
 
-class APIProcessorInstance(APIPipeEntity):
-    processor_id: str
+class APIProcessorInstance(UPipeEntity):
+    pid: str
 
 
 class APIProcess(APIProcessor):
     instance_id: int
     pid: Optional[int]
-    type: PipeEntityType = PipeEntityType.PROCESS
+    type: UPipeEntityType = UPipeEntityType.PROCESS

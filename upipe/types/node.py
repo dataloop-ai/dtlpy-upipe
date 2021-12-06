@@ -1,8 +1,7 @@
-from .base import APIPipeEntity
+from .base import UPipeEntity
 
 
-class APINode(APIPipeEntity):
+class APINode(UPipeEntity):
     controller: bool
     controller_host: str = None
     controller_port: int = None
-    id: str
