@@ -66,14 +66,32 @@ async def main():
     print("Running")
 
 
-async def to_run():
-    pipe = Pipe('content-detection')
+def to_run():
+    loop = asyncio.get_event_loop()
 
+    import time
+    n = 20
+    for i in range(n):
+        print('------------ PREPARE TO RUN IN {}[s]:'.format(n - i))
+        time.sleep(1)
+    print('calling the pipe:')
+    pipe = Pipe('content-detection')
     future = asyncio.run(pipe.emit(data={'item_id': '617fd6f591e01807b4adef92'},
                                    d_type=DType.JSON
                                    ))
 
 
-if __name__ == "__main__":
+def start_pipe():
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main())
+
+
+if __name__ == "__main__":
+    from multiprocessing import Process
+
+    loop = asyncio.get_event_loop()
+    p = Process(target=to_run)
+    p.start()
+    p = Process(target=start_pipe)
+    p.start()
+    p.join()
