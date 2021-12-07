@@ -1,8 +1,9 @@
 import numpy as np
 import dtlpy as dl
 import asyncio
+import time
 import cv2
-
+from multiprocessing import Process
 from upipe import Processor, Pipe, DType
 
 
@@ -69,7 +70,6 @@ async def main():
 def to_run():
     loop = asyncio.get_event_loop()
 
-    import time
     n = 20
     for i in range(n):
         print('------------ PREPARE TO RUN IN {}[s]:'.format(n - i))
@@ -87,8 +87,6 @@ def start_pipe():
 
 
 if __name__ == "__main__":
-    from multiprocessing import Process
-
     loop = asyncio.get_event_loop()
     p = Process(target=to_run)
     p.start()
