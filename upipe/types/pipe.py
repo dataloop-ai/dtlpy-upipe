@@ -3,9 +3,9 @@ from pydantic.annotated_types import Dict
 
 from .messages import UPipeMessage
 from .processor import APIProcessor
-from .queue import APIQueue
-from .base import UPipeEntity, UPipeEntityType
 
+from .mem_queue import APIQueue
+from .base import UPipeEntityType, UPipeEntity
 
 class PipeExecutionStatus(IntEnum):
     INIT = 1

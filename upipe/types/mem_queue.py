@@ -14,5 +14,5 @@ class APIQueue(UPipeEntity):
 
 
 class APIProcQueues(BaseModel):
-    proc_name: str
+    proc_id: str
     queues: Dict[str, APIQueue] = {}
