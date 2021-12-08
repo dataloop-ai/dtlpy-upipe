@@ -9,7 +9,7 @@ from typing import Dict
 
 import aiohttp
 import websocket
-from aiohttp import FormData, ClientSession
+from aiohttp import FormData, ClientSession, ServerDisconnectedError
 
 from upipe.types import UPipeEntity, UPipeEntityType
 from .. import types
@@ -103,11 +103,11 @@ class NodeClient:
         start_time = time.time()
         while True:
             try:
-                for proc_name in self.sessions:
-                    s = self.sessions[proc_name]
+                for host_name in self.sessions:
+                    s = self.sessions[host_name]
                     if s:
                         await s.close()
-                    self.sessions = []
+                self.sessions = dict()
                 if self._server_session:
                     await self._server_session.close()
                     self._server_session = None
@@ -169,7 +169,10 @@ class NodeClient:
         # data.add_field('q', dict(q.api_def.dict()))
         data.add_field('q', q.queue_def.json())
         data.add_field('frame_file', bin_frame, content_type="multipart/form-data")
-        resp = await session.post(url, data=data)
+        try:
+            resp = await session.post(url, data=data)
+        except ServerDisconnectedError:
+            return False
         if resp.status != 200:
             return False
         res: types.APIResponse = types.APIResponse.parse_obj(await resp.json())
