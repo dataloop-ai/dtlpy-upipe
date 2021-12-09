@@ -124,7 +124,7 @@ class Processor:
         return self.registered
 
     def start(self):
-        pass
+        raise NotImplementedError("Processor can not started directly")
 
     async def connect(self):
         # if not self.registered:
@@ -224,7 +224,8 @@ class Processor:
 
     def get_next_q_to_emit(self):
         if len(self.out_qs) == 0:
-            raise MemoryError
+            print(f"Warning:Processor {self.name} emit dropped: No destination")
+            return False
         q = self.out_qs[0]
         return q
 
@@ -240,6 +241,8 @@ class Processor:
     async def emit(self, data, d_type: entities.DType = None):
         msg = entities.DataFrame(data, d_type)
         q = self.get_next_q_to_emit()
+        if not q:
+            return False
         success = True
         for q in self.out_qs:
             success = success and await self.enqueue(q, msg)
