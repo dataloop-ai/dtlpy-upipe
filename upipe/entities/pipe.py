@@ -1,7 +1,7 @@
 import asyncio
 
 from .processor import Processor
-from .. import types, node
+from .. import types, node, entities
 
 control_mem_name = "control_mem"
 
@@ -15,12 +15,14 @@ class Pipe(Processor):
         self._completion_future: asyncio.Future = asyncio.Future()
         self._start_future: asyncio.Future = asyncio.Future()
         self.server_proc = None
+        self.status: types.PipeExecutionStatus = types.PipeExecutionStatus.INIT
         # self.main_block = shared_memory_dict.SharedMemoryDict(name=name, size=1025)
 
     def handle_pipelines_message(self, msg_json):
         msg = types.UPipeMessage.parse_obj(msg_json)
         if msg.type == types.UPipeMessageType.PIPE_STATUS:
             status_msg = types.APIPipeStatusMessage.parse_obj(msg_json)
+            self.status = status_msg.status
             if status_msg.status == types.PipeExecutionStatus.COMPLETED:
                 self._completion_future.set_result(0)
             if status_msg.status == types.PipeExecutionStatus.RUNNING:
@@ -57,6 +59,11 @@ class Pipe(Processor):
         self._completion_future = asyncio.Future()
         await asyncio.wait([self._start_future])
         print(f"{self.name} running")
+
+    async def emit(self, data, d_type: entities.DType = None):
+        if self.status != types.PipeExecutionStatus.RUNNING:
+            raise BrokenPipeError("Pipe is not running: data ingestion blocked")
+        return super().emit(data, d_type)
 
     async def wait_for_completion(self):
         if not self._completion_future:

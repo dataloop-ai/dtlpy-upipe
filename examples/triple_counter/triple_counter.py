@@ -22,8 +22,6 @@ async def b():
     print("Hello b")
     proc = Processor("b")
     await proc.connect()
-
-    proc.start()
     while True:
         counter = await proc.get_sync()
         if await proc.emit(counter, up.DType.U32):
@@ -37,15 +35,12 @@ async def c():
     print("Hello c")
     proc = Processor("c")
     await proc.connect()
-
-    proc.start()
     while True:
         counter = await proc.get_sync()
-        if await proc.emit(counter, up.DType.U32):
-            if counter % 10000 == 0:
-                print(f"{counter / 1000}K")
-            if counter == 100000:
-                break
+        if counter % 10000 == 0:
+            print(f"{counter / 1000}K")
+        if counter == 100000:
+            break
 
 
 async def main():
