@@ -10,7 +10,7 @@ from pydantic.main import BaseModel
 from typing import List
 
 from ..types import APIQueue
-from .dataframe import DataFrame, DType
+from .dataframe import DataFrame
 
 import asyncio
 
@@ -249,7 +249,7 @@ class MemQueue:
                 print(f"CRC Check: Expected:{expected_crc32},Actual:{actual_crc32}")
                 raise BrokenPipeError(f"Frame CRC32 error at index:{start_exe_index}, exe count:{self.exe_counter} ")
             # done
-            frame = DataFrame.from_byte_arr(frame_data, DType(frame_d_type))
+            frame = DataFrame.from_byte_arr(frame_data)
             self.exe_counter += 1
             return frame
         finally:
@@ -265,7 +265,8 @@ class MemQueue:
         capacity = (self.size - self.Q_CONTROL_SIZE - self.free_space) / self.size
         if capacity > self.MAX_CAPACITY:
             return False
-        frame_size = df.size + self.FRAME_HEADER_SIZE
+        body = df.byte_arr
+        frame_size = len(body) + self.FRAME_HEADER_SIZE
         if frame_size > self.free_space:
             return False
         if self.alloc_index == 2765604:
@@ -274,10 +275,9 @@ class MemQueue:
             f"Put {current_milli_time()} - Frame size:{frame_size}, free space:{self.free_space}, alloc_index:{self.alloc_index},exe_index:{self.exe_index}")
         try:
             await self.acquire_write_lock()
-            body = df.byte_arr_data
             header = bytearray(self.FRAME_HEADER_SIZE)
             header[self.FRAME_STATUS_OFFSET] = FRAME_STATUS.CREATED
-            header[self.FRAME_TYPE_OFFSET] = df.d_type
+            header[self.FRAME_TYPE_OFFSET] = 13  # for luck, not needed for now
             header[self.FRAME_SIZE_OFFSET:self.FRAME_SIZE_OFFSET + 4] = frame_size.to_bytes(4, "little")
             header[self.FRAME_WATERMARK_OFFSET:self.FRAME_WATERMARK_OFFSET + 8] = self.WATER_MARK
             header[self.FRAME_CRC32_OFFSET:self.FRAME_CRC32_OFFSET + 4] = binascii.crc32(body).to_bytes(4, "little")
@@ -308,6 +308,7 @@ class MemQueue:
             await self.release_write_lock()
 
     def print(self):
+        return
         parser = FrameParser(self.mem.buf, self.exe_index)
         parser.print()
 

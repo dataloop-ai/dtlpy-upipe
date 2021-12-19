@@ -63,7 +63,7 @@ async def test_str(count: int = 10):
                                       from_p="a",
                                       to_p="b",
                                       id="12",
-                                      size=100))
+                                      size=200))
     for i in range(count):
         frame = DataFrame(f"{i}")
         if await q.put(frame):
@@ -86,7 +86,7 @@ async def test_serial(d_type: DType = DType.U8):
                                       from_p="a",
                                       to_p="b",
                                       id="12",
-                                      size=101))
+                                      size=4096))
     for i in range(10):
         frame = DataFrame(i)
         if await q.put(frame):

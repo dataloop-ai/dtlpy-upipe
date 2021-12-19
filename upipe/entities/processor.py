@@ -74,7 +74,7 @@ class Processor:
         self.interpreter = sys.executable
         self.request_termination = False  # called from manager to notify its over
         self.type = types.UPipeEntityType.PROCESSOR
-        self.node_client = node.NodeClient(types.UPipeEntityType.PROCESSOR, self.id, self.on_ws_message)
+        self.node_client = node.NodeClient(self.processor_def, self.id, self.on_ws_message)
         atexit.register(self.cleanup)
 
     # noinspection PyBroadException
@@ -239,7 +239,7 @@ class Processor:
         return True
 
     async def emit(self, data, d_type: entities.DType = None):
-        msg = entities.DataFrame(data, d_type)
+        msg = entities.DataFrame(data)
         q = self.get_next_q_to_emit()
         if not q:
             return False
@@ -249,10 +249,10 @@ class Processor:
         return success
 
     async def emit_sync(self, data, d_type: entities.DType = None):
-        msg = entities.DataFrame(data, d_type)
+        msg = entities.DataFrame(data)
         while not await self.out_qs[0].space_available(msg):
             await asyncio.sleep(.1)
-        return await self.emit(data, d_type)
+        return await self.emit(data)
 
     async def get(self):
         sys.stdout.flush()

@@ -10,8 +10,8 @@ class Pipe(Processor):
 
     def __init__(self, name):
         Processor.__init__(self, name)
-        self.node_client = node.NodeClient(types.UPipeEntityType.PIPELINE, name, self.on_ws_message)
         self.type = types.UPipeEntityType.PIPELINE
+        self.node_client = node.NodeClient(self.processor_def, name, self.on_ws_message)
         self._completion_future: asyncio.Future = asyncio.Future()
         self._start_future: asyncio.Future = asyncio.Future()
         self.server_proc = None

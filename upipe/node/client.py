@@ -186,10 +186,10 @@ class NodeClient:
 
     @property
     def ws_url(self):
-        if self.agent_type == UPipeEntityType.PROCESSOR:
+        if self.agent_type.type == UPipeEntityType.PROCESSOR:
             pid = os.getpid()
             return f"ws://{self.server_base_url}/ws/proc/{pid}"
-        if self.agent_type == UPipeEntityType.PIPELINE:
+        if self.agent_type.type == UPipeEntityType.PIPELINE:
             return f"ws://{self.server_base_url}/ws/pipe/{self.agent_id}"
 
     def on_message(self, ws, message):

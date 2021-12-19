@@ -7,7 +7,6 @@ async def main():
     proc = Processor("c")
     await proc.connect()
     counter = 0
-    proc.start()
     while True:
         try:
             value = await proc.get_sync()

@@ -13,7 +13,6 @@ async def main():
     print("Hello sha processor b")
     proc = Processor("b")
     await proc.connect()
-    proc.start()
     counter = 0
     while True:
         try:

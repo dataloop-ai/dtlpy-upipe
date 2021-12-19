@@ -18,9 +18,9 @@ async def main():
     while True:
         if await me.emit(frame, DType.ND_ARR):
             counter += 1
-            if counter % 1000 == 0:
+            if counter % 100 == 0:
                 logger.info(f"{counter / 1000}K")
-            if counter == 3000:
+            if counter == 1000:
                 break
 
 

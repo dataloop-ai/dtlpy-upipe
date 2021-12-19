@@ -14,7 +14,6 @@ async def main():
     q: MemQueue = me.get_next_q_to_emit()
     while True:
         if await me.emit(val, DType.U32):
-
             if val % 10000 == 0:
                 print(f"{val / 1000}K")
             if val == limit:

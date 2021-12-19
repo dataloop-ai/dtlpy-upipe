@@ -10,9 +10,6 @@ async def main():
     await me.connect()
     print("a connected")
     val = 1
-    q: MemQueue = me.get_next_q_to_emit()
-    if q.alloc_counter != 0:
-        raise BrokenPipeError("Queue already filled")
     while True:
         if await me.emit(val, up.DType.U32):
 

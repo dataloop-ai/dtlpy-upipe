@@ -6,8 +6,6 @@ async def main():
     print("Hello c")
     proc = Processor("c")
     await proc.connect()
-
-    proc.start()
     while True:
         try:
             counter = await proc.get_sync()

@@ -10,7 +10,6 @@ async def main():
     await me.connect()
     print("b connected")
     val = 1
-    q: MemQueue = me.get_next_q_to_emit()
     while True:
         if await me.emit(val, up.DType.U32):
 

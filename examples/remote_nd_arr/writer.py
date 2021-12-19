@@ -13,14 +13,13 @@ async def main():
     logger.info("Hello writer")
     proc = Processor("writer")
     await proc.connect()
-    proc.start()
     logger.info("writer started")
     first = True
     counter = 0
     tic = time.time()
     while True:
         counter += 1
-        if counter == 3000:
+        if counter == 1000:
             break
         try:
             frame = await proc.get_sync()
@@ -31,7 +30,7 @@ async def main():
         except TimeoutError:
             logger.info("timeout")
             break
-        if counter % 1000 == 0:
+        if counter % 100 == 0:
             logger.info(f"got shape {frame.shape}, rate: {counter / (time.time() - tic)}")
 
 

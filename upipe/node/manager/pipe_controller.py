@@ -8,7 +8,6 @@ from fastapi import WebSocket
 
 from ... import types, entities
 from .process_controller import ProcessorController, ProcessorInstance
-from ..client import NodeClient
 from ...types import PipeExecutionStatus
 
 
