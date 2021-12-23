@@ -1,14 +1,16 @@
 import asyncio
+import json
 import time
 from typing import Dict, List, Union
 
 import numpy as np
 from colorama import Fore
 from fastapi import WebSocket
+from starlette.websockets import WebSocketDisconnect
 
 from ... import types, entities
 from .process_controller import ProcessorController, ProcessorInstance
-from ...types import PipeExecutionStatus
+from ...types import PipeExecutionStatus, APIProcessor, parse_message
 
 
 class PipeController:
@@ -24,6 +26,7 @@ class PipeController:
         self.name = None
         self.connections: List[WebSocket] = []
         self.pipe: Union[types.APIPipe, None] = None
+        self.msg_counter = 0
 
     async def connect_pipe(self, websocket: WebSocket):
         await websocket.accept()
@@ -35,6 +38,25 @@ class PipeController:
                                          scope=types.UPipeEntityType.PIPELINE)
         await websocket.send_json(msg.dict())
         self.connections.append(websocket)
+        await self.ws_monitor(websocket)
+
+    async def ws_monitor(self, websocket: WebSocket):
+        try:
+            while True:
+                data = await websocket.receive_text()
+                msg = json.loads(data)
+                parsed = parse_message(msg)
+                self.msg_counter += 1
+                try:
+                    self.process_message(parsed)
+                except Exception as e:
+                    raise ValueError("Un supported processor message")
+        except WebSocketDisconnect:
+            self.connections.remove(websocket)
+            print(f"pipe connection lost: {self.pipe.id}")
+            return
+        except Exception as e:
+            raise ValueError("Error parsing message")
 
     def get_instance_by_pid(self, pid: int):
         launched = []
@@ -69,7 +91,7 @@ class PipeController:
         for proc_name in self.processors:
             p: ProcessorController = self.processors[proc_name]
             if p.is_my_process(pid):
-                await p.connect_proc(websocket)
+                await p.connect_proc(pid, websocket)
                 return
         available_processors = ', '.join([key for key in self.processors.keys()])
         print("Instance launch error: {!r}. available: {}".format(pid, available_processors))
@@ -81,27 +103,15 @@ class PipeController:
         p: ProcessorController = self.processors[proc_name]
         await p.disconnect_proc()
 
-    def process_control_message(self, pipe_control_msg: types.APIPipeControlMessage):
+    def process_control_message(self, pipe_control_msg: Union[types.APIPipeControlMessage, types.UPipeMessage]):
         if pipe_control_msg.action == types.PipeActionType.START:
             self.start()
         if pipe_control_msg.action == types.PipeActionType.PAUSE:
             self.pause()
 
-    def process_pipe_message(self, proc_msg: types.UPipeMessage):
-        if proc_msg.type == types.UPipeMessageType.PIPE_CONTROL:
-            pipe_control_msg = types.APIPipeControlMessage.parse_obj(proc_msg)
-            self.process_control_message(pipe_control_msg)
-
-    def process_message(self, proc_msg: types.UPipeMessage):
-        try:
-            if proc_msg.scope == types.UPipeEntityType.PIPELINE:
-                self.process_pipe_message(proc_msg)
-            if proc_msg.scope == types.UPipeEntityType.PROCESSOR:
-                if proc_msg.dest not in self.processors:
-                    return
-                self.processors[proc_msg.dest].process_message(proc_msg)
-        except Exception as e:
-            print(f"Error on pipe message : {str(e)}")
+    def process_message(self, pipe_msg: types.UPipeMessage):
+        if pipe_msg.type == types.UPipeMessageType.PIPE_CONTROL:
+            self.process_control_message(pipe_msg)
 
     def log_q_usage(self):
         current_time = time.time() * 1000  # ms
@@ -168,6 +178,29 @@ class PipeController:
         loop = asyncio.get_event_loop()
         loop.create_task(self.set_pipe_status(PipeExecutionStatus.PAUSED))
 
+    def request_termination(self):
+        loop = asyncio.get_event_loop()
+        loop.create_task(self.set_pipe_status(PipeExecutionStatus.PENDING_TERMINATION))
+        self.terminate_next_processor()
+
+    def terminate_next_processor(self):
+        termination_list: List[APIProcessor] = self.pipe.drain_list()
+        for proc_def in termination_list:
+            processor: ProcessorController = self.processors[proc_def.id]
+            if processor.running_instances_num == 0:
+                continue
+            processor.request_termination()
+            break
+        if self.running_processors_num == 0:
+            loop = asyncio.get_event_loop()
+            loop.create_task(self.set_pipe_status(PipeExecutionStatus.COMPLETED))
+
+    def notify_termination(self, pid: int, proc: types.UPipeEntity):
+        if proc.id in self.processors:
+            self.processors[proc.id].notify_termination(pid)
+        if self.pending_termination:
+            self.terminate_next_processor()
+
     async def set_pipe_status(self, status: PipeExecutionStatus):
         self.status = status
         msg = types.APIPipeStatusMessage(dest=self.name,
@@ -178,6 +211,18 @@ class PipeController:
                                          scope=types.UPipeEntityType.PIPELINE)
         for connection in self.connections:
             await connection.send_json(msg.dict())
+
+    @property
+    def pending_termination(self):
+        return self.status == PipeExecutionStatus.PENDING_TERMINATION
+
+    @property
+    def running_processors(self):
+        return [self.processors[i] for i in self.processors if self.processors[i].running_instances_num > 0]
+
+    @property
+    def running_processors_num(self):
+        return len(self.running_processors)
 
     @property
     def scaled_to_maxed(self):
@@ -248,9 +293,11 @@ class PipeController:
     def handle_control_msg(self, control_msg: types.APIPipeControlMessage):
         if control_msg.action == types.PipeActionType.START:
             return self.start()
+        if control_msg.action == types.PipeActionType.TERMINATE:
+            return self.request_termination()
 
     def remove_instance(self, instance: ProcessorInstance):
-        p = self.processors[instance.proc_id]
+        p = self.processors[instance.proc.id]
         p.instances.remove(instance)
 
     def handle_instance_exit(self, instance: ProcessorInstance):

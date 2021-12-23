@@ -1,7 +1,7 @@
 import json
 import pickle
 from enum import IntEnum
-from typing import List, Type, Union
+from typing import List, Type, Union, Dict
 
 import numpy as np
 from pydantic import BaseModel
@@ -196,9 +196,9 @@ class DataField:
         self.key = key
         self.value = value
         self.d_type = d_type
-        self.byte_arr = self.to_byte_arr()
 
-    def to_byte_arr(self):
+    @property
+    def byte_arr(self):
         arr = bytearray(2)
         arr[0] = self.d_type
         key_bytes = bytearray(self.key.encode('utf-8'))
@@ -218,7 +218,7 @@ class DataField:
         key_bytes = arr[key_start:key_start + key_size]
         key = key_bytes.decode("utf-8")
         key_end = key_start + key_size
-        value_size = int.from_bytes(arr[key_end:key_end+4], "little")
+        value_size = int.from_bytes(arr[key_end:key_end + 4], "little")
         value_start = key_end + 4
         value_bytes = arr[value_start:value_start + value_size]
         field = DataField(key, data_from_byte_arr(value_bytes, d_type), d_type)
@@ -230,16 +230,20 @@ class DataField:
 
 
 class DataFrame:
-    reserved_keys = ['d']
+    reserved_keys = ['d', 'pid', 'last', 'forward']
     MAX_FIELD_LIMIT = 255
 
     def __init__(self, data=None):
-        self.fields = dict()
+        self.fields: Dict[str, DataField] = dict()
         if data is not None:
             self.fields['d'] = DataField('d', data)  # "d" is special key, the default key
         self.byte_arr = self.to_byte_arr()
 
     def add_field(self, key, value):
+        f = DataField(key, value)
+        self._add_field(f)
+
+    def init_pipe_execution(self, key, value):
         f = DataField(key, value)
         self._add_field(f)
 
@@ -269,9 +273,25 @@ class DataFrame:
     def data(self):
         if self.fields_number == 0:
             raise ValueError("Trying to access empty frame data")
-        if self.fields_number == 1:
-            return self.fields[next(iter(self.fields))].value
+        if 'd' in self.fields:
+            return self.fields['d'].value
+        for key in self.fields:
+            if key in self.reserved_keys:
+                continue
+            return self.fields[key].value
         raise ValueError("Not supported")
+
+    @property
+    def last(self):
+        if 'last' not in self.fields:
+            return None
+        return self.fields['last'].value
+
+    @last.setter
+    def last(self, flag: bool):
+        if not flag:
+            return self.fields.pop('last', None)
+        self.fields['last'] = DataField('last', 1, DType.U8)
 
     @staticmethod
     def encode_field_to_byte_arr(f: DataField):

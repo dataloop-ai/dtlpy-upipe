@@ -178,7 +178,7 @@ class MemQueue:
         entry.time = current_time
         self.log.log_dequeue(entry)
 
-    async def get(self):
+    async def get(self) -> DataFrame:
         try:
             if self.pending_counter == 0:
                 return None

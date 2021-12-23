@@ -8,7 +8,7 @@ import sys
 import types
 from enum import IntEnum
 from multiprocessing.queues import Queue
-from typing import List
+from typing import List, Union
 
 from fastapi import WebSocket
 
@@ -41,6 +41,7 @@ def launch_module(mode_name, mod_path, function_name, proc_stdout):
     if inspect.iscoroutinefunction(f):
         loop = asyncio.new_event_loop()
         loop.run_until_complete(f())
+        # noinspection GrazieInspection
         loop.run_until_complete(asyncio.sleep(3))  # some time for things to cleanup like connections
         loop.close()
     else:
@@ -59,7 +60,7 @@ class ProcessorController:
     LAST_INSTANCE_ID_POINTER = 1  # size 4
 
     def __init__(self, proc: up_types.APIProcessor, queues: [entities.MemQueue]):
-        self.proc = proc
+        self.proc: up_types.APIProcessor = proc
         self._instances: List[ProcessorInstance] = []
         self._interpreter_path = sys.executable
         self.status: up_types.ProcessorExecutionStatus = up_types.ProcessorExecutionStatus.INIT
@@ -69,17 +70,16 @@ class ProcessorController:
         self._control_mem = utils.SharedMemoryBuffer(name=processor_memory_name,
                                                      size=size,
                                                      mode=utils.MEMORY_ALLOCATION_MODE.CREATE_ONLY)
-        self.connection = None
 
-    async def connect_proc(self, websocket: WebSocket):
-        await websocket.accept()
-        self.connection = websocket
+    async def connect_proc(self, pid: int, websocket: WebSocket):
+        instance = self.get_instance_by_pid(pid)
+        if instance:
+            await instance.connect_proc(websocket)
+        else:
+            raise BrokenPipeError(f"PID {pid} was not found on processor {self.proc.id}")
 
     async def disconnect_proc(self):
-        self.connection = None
-
-    def process_message(self, proc_msg: up_types.UPipeMessage):
-        pass
+        raise NotImplementedError()
 
     def on_complete(self, with_errors):
         self.status = up_types.ProcessorExecutionStatus.COMPLETED
@@ -89,6 +89,28 @@ class ProcessorController:
 
     def pause(self):
         pass
+
+    def get_instance_by_pid(self, pid: int) -> Union[ProcessorInstance, None]:
+        for i in self.instances:
+            if i.pid == pid:
+                return i
+            if i.is_child_process(pid):
+                return i
+        return None
+
+    def notify_termination(self, pid: int):
+        instance = self.get_instance_by_pid(pid)
+        if instance:
+            instance.notify_termination()
+        if self.pending_termination and len(self.running_instances) == 0:
+            self.status = up_types.ProcessorExecutionStatus.COMPLETED
+            return True
+        return False
+
+    def request_termination(self):
+        for i in self.instances:
+            i.request_termination()
+        self.status = up_types.ProcessorExecutionStatus.PENDING_TERMINATION
 
     def launch_instance(self):
         if not self.proc.entry:
@@ -150,6 +172,14 @@ class ProcessorController:
         return self._instances
 
     @property
+    def running_instances(self):
+        return [i for i in self.instances if i.running]
+
+    @property
+    def running_instances_num(self):
+        return len(self.running_instances)
+
+    @property
     def name(self):
         return self.proc.name
 
@@ -164,6 +194,10 @@ class ProcessorController:
     @property
     def pending(self):
         return sum([q.pending_counter for q in self.in_queues])
+
+    @property
+    def pending_termination(self):
+        return self.status == up_types.ProcessorExecutionStatus.PENDING_TERMINATION
 
     @property
     def in_queues(self):

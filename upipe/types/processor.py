@@ -11,6 +11,7 @@ class ProcessorExecutionStatus(IntEnum):
     PAUSED = 4
     RUNNING = 5
     COMPLETED = 6
+    PENDING_TERMINATION = 7
 
 class APIProcSettings(BaseModel):
     priority: int = 1
@@ -28,13 +29,3 @@ class APIProcessor(UPipeEntity):
 
     class Config:
         arbitrary_types_allowed = True
-
-
-class APIProcessorInstance(UPipeEntity):
-    pid: str
-
-
-class APIProcess(APIProcessor):
-    instance_id: int
-    pid: Optional[int]
-    type: UPipeEntityType = UPipeEntityType.PROCESS

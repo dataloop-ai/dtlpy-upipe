@@ -9,13 +9,14 @@ class UPipeMessageType(IntEnum):
     Q_STATUS = 1
     Q_UPDATE = 2
     PROC_REGISTER = 3
-    PROC_TERMINATE = 4
+    REQUEST_TERMINATION = 4
     PIPE_REGISTER = 5
     NODE_INIT = 6
     PIPE_CONTROL = 7
     PIPE_STATUS = 8
     CONFIG_UPDATE = 9
     REGISTRATION_INFO = 10
+    INSTANCE_ACTION = 11
 
 
 class UPipeMessage(BaseModel):

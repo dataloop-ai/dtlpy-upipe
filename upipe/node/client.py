@@ -132,6 +132,12 @@ class NodeClient:
         register_url = f"http://{self.server_base_url}/register_proc/{pid}"
         return await self.server_session.post(register_url, json=proc.dict())
 
+    @retry(times=3)
+    async def notify_termination(self, proc: types.UPipeEntity):
+        pid = os.getpid()
+        notify_termination_url = f"http://{self.server_base_url}/notify_termination/{pid}"
+        return await self.server_session.post(notify_termination_url, json=proc.dict())
+
     @retry(times=10)
     async def load_pipe(self, pipe: types.APIPipe):
         register_url = f"http://{self.server_base_url}/load_pipe"

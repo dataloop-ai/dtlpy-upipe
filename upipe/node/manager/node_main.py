@@ -6,7 +6,7 @@ import sys
 import os
 import time
 from enum import IntEnum
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Union
 
 import numpy as np
 import requests
@@ -15,7 +15,7 @@ from fastapi import WebSocket
 
 from ... import entities, types, utils
 from .node_config import NodeConfig
-from ..client import NodeClient
+
 from .pipe_controller import PipeController
 from .node_utils import kill_em_all, get_process_by_path, count_process_by_path
 from ...types import UPipeEntityType
@@ -85,8 +85,14 @@ class ComputeNode:
                     queues.queues[api_q.id] = api_q
         return queues
 
-    def register_launched_instance(self, pid: int, proc: types.UPipeEntity) -> Tuple[int, dict]:
-        from .. import ProcessorInstance  ## TODO, circular dependency to resovle
+    def notify_termination(self, pid: int, proc: types.UPipeEntity):
+        for p in self.pipe_controllers:
+            pipe: PipeController = self.pipe_controllers[p]
+            if proc.id in pipe.processors:
+                pipe.notify_termination(pid, proc)
+
+    def register_launched_instance(self, pid: int, proc: types.UPipeEntity):
+        from .. import ProcessorInstance  # TODO, circular dependency to resolve
         launched_processor: Union[ProcessorInstance, None] = None
         for p in self.pipe_controllers:
             pipe: PipeController = self.pipe_controllers[p]
@@ -165,6 +171,7 @@ class ComputeNode:
     def nodes_process_count():
         return count_process_by_path(ComputeNode.server_path)
 
+    # noinspection PyBroadException
     @staticmethod
     def is_server_available():
         server_base_url = ComputeNode.server_base_url()
@@ -217,8 +224,7 @@ class ComputeNode:
         self.process_message(proc_msg)
 
     def connect(self):
-        self.node_client.connect()
-        self._node_ready = True
+        raise NotImplementedError()
 
     async def push_q(self, q: types.APIQueue, df: entities.DataFrame):
         for pipe_name in self.pipe_controllers:
@@ -285,6 +291,7 @@ class ComputeNode:
             p = self.pipe_controllers[pipe_name]
             p.log_pipe_utilization()
 
+    # noinspection PyTypeChecker
     def is_scale_down_required(self):
         if len(self.node_usage_history) == 0:
             return False
@@ -300,6 +307,7 @@ class ComputeNode:
         if memory > 90:
             return True
 
+    # noinspection PyTypeChecker
     def is_scale_up_possible(self):
         time_since_last_autoscale = time.time() - self.last_scale_time
         if time_since_last_autoscale < self.scale_block_time:

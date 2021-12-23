@@ -65,6 +65,11 @@ async def register_proc(pid: str, proc: types.UPipeEntity):
     return types.APIResponse(success=True, data=data, messages=[registration_update_msg, q_update_msg])
 
 
+@fast_api.post("/notify_termination/{pid}")
+async def notify_termination(pid: str, proc: types.UPipeEntity):
+    instance = node.notify_termination(int(pid), proc)
+    return types.APIResponse(success=True)
+
 # noinspection PyBroadException
 @fast_api.post("/load_pipe")
 async def load_pipe(pipe: types.APIPipe):
@@ -93,48 +98,13 @@ async def startup_event():
     print("Server ready")
     return
 
-
-async def handle_server_message(message: types.UPipeMessage):
-    pass
-
-
-msg_counter = 0
-
 @fast_api.websocket("/ws/proc/{pid}")
 async def proc_websocket_endpoint(websocket: WebSocket, pid: str):
     await node.attach_proc(int(pid), websocket)
-    try:
-        await ws_monitor(websocket)
-    except WebSocketDisconnect:
-        return
 
 @fast_api.websocket("/ws/pipe/{pipe_id}")
 async def pipe_websocket_endpoint(websocket: WebSocket, pipe_id: str):
     await node.attach_pipe(pipe_id, websocket)
-    try:
-        await ws_monitor(websocket)
-    except WebSocketDisconnect:
-        return
-
-async def ws_monitor(websocket: WebSocket):
-    global msg_counter
-    try:
-        while True:
-            data = await websocket.receive_text()
-            msg = json.loads(data)
-            msg_counter += 1
-            try:
-                proc_msg: types.UPipeMessage = types.parse_pipe_message(json.loads(data))
-                if proc_msg.scope == types.UPipeEntityType.SERVER:
-                    await handle_server_message(msg)
-                else:
-                    node.process_message(proc_msg)
-            except Exception as e:
-                raise ValueError("Un supported processor message")
-    except WebSocketDisconnect:
-        raise WebSocketDisconnect
-    except Exception as e:
-        raise ValueError("Error parsing message")
 
 @fast_api.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):

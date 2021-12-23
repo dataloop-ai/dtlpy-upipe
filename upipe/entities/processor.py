@@ -203,7 +203,7 @@ class Processor:
         if msg.type == types.UPipeMessageType.REGISTRATION_INFO:
             print("Updating registration info")
             self.instance_id = msg.body['instance_id']
-        if msg.type == types.UPipeMessageType.PROC_TERMINATE:
+        if msg.type == types.UPipeMessageType.REQUEST_TERMINATION:
             print("Termination request")
             self.request_termination = True
 
@@ -256,8 +256,6 @@ class Processor:
 
     async def get(self):
         sys.stdout.flush()
-        if self.request_termination:
-            raise GeneratorExit("Process terminated by node manager")
         for i in range(len(self.in_qs)):
             next_index = (self.consumer_next_q_index + i) % len(self.in_qs)
             q: entities.MemQueue = self.in_qs[next_index]
@@ -265,6 +263,8 @@ class Processor:
             if frame:
                 self.consumer_next_q_index += 1
                 return frame.data
+        if self.request_termination:  # no more messages and goodbye requested from pipe
+            await self.terminate()
         return None
 
     async def get_sync(self, timeout: int = 5):
@@ -278,6 +278,10 @@ class Processor:
             if elapsed > timeout:
                 raise TimeoutError(f"get_sync timeout {elapsed} sec")
             await asyncio.sleep(sleep_time)
+
+    async def terminate(self):
+        (data, messages) = await self.node_client.notify_termination(self.processor_def)
+        sys.exit(0)
 
     @property
     def config_hash(self):

@@ -63,7 +63,12 @@ class Pipe(Processor):
     async def emit(self, data, d_type: entities.DType = None):
         if self.status != types.PipeExecutionStatus.RUNNING:
             raise BrokenPipeError("Pipe is not running: data ingestion blocked")
-        return super().emit(data, d_type)
+        return await super().emit(data, d_type)
+
+    async def emit_sync(self, data, d_type: entities.DType = None):
+        if self.status != types.PipeExecutionStatus.RUNNING:
+            raise BrokenPipeError("Pipe is not running: data ingestion blocked")
+        return await super().emit_sync(data, d_type)
 
     async def wait_for_completion(self):
         if not self._completion_future:
@@ -71,13 +76,27 @@ class Pipe(Processor):
         await asyncio.wait([self._completion_future])
         # self.cleanup()
 
+    async def terminate(self, ):
+        print(f"Terminating pipe {self.name}")
+        self.send_pipe_action(types.PipeActionType.TERMINATE)
+        self._completion_future = asyncio.Future()
+        return await self.wait_for_completion()
+
     @property
     def id(self):
         return self.name
 
     @property
+    def completed(self):
+        return self.status == types.PipeExecutionStatus.COMPLETED
+
+    @property
+    def running(self):
+        return self.status == types.PipeExecutionStatus.RUNNING
+
+    @property
     def pipe_def(self):
-        pipe_api_def = types.APIPipe(name=self.name, id=self.name)
+        pipe_api_def = types.APIPipe(name=self.name, id=self.name, root=self.processor_def)
 
         def map_proc(processor: Processor):
             proc_def = processor.processor_def

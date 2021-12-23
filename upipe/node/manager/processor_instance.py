@@ -1,12 +1,16 @@
+import json
 import time
 from enum import IntEnum
 from queue import Empty
 from threading import Thread
+from typing import Union
 
 import psutil
 from colorama import Fore, Back, Style
+from fastapi import WebSocket
+from starlette.websockets import WebSocketDisconnect
 
-from upipe.types import UPipeEntityType
+from upipe.types import UPipeEntityType, UPipeMessage, UPipeMessageType, parse_message, APIProcessor
 
 
 class InstanceType(IntEnum):
@@ -20,6 +24,7 @@ class InstanceState(IntEnum):
     RUNNING = 3
     PAUSED = 4
     DONE = 5
+    PENDING_TERMINATION = 6
 
 
 class ProcessorInstance:
@@ -28,14 +33,16 @@ class ProcessorInstance:
               ]
     next_color_index = 0
 
-    def __init__(self, proc, process, instance_type=InstanceType.SUB_PROCESS, stdout_q=None):
-        self.proc = proc
+    def __init__(self, proc: APIProcessor, process, instance_type=InstanceType.SUB_PROCESS, stdout_q=None):
+        self.proc: APIProcessor = proc
         self.root_process = process
         self.running_process = None
         self.instance_type = instance_type
         self.stdout_q = stdout_q
         self.color_index = ProcessorInstance.next_color_index
         self.state = InstanceState.LAUNCHED
+        self.connection: Union[None, WebSocket] = None
+        self.msg_counter = 0
         ProcessorInstance.next_color_index += 1
         if ProcessorInstance.next_color_index >= len(self.colors):
             ProcessorInstance.next_color_index = 0
@@ -49,6 +56,32 @@ class ProcessorInstance:
         if self.is_child_process(pid):
             return
         raise BrokenPipeError(f"Can not register PID to instance {self.name}")
+
+    async def connect_proc(self, websocket: WebSocket):
+        await websocket.accept()
+        self.connection = websocket
+        await self.ws_monitor(websocket)
+
+    async def ws_monitor(self, websocket: WebSocket):
+        try:
+            while True:
+                data = await websocket.receive_text()
+                msg = json.loads(data)
+                parsed = parse_message(msg)
+                self.msg_counter += 1
+                try:
+                    self.process_message(parsed)
+                except Exception as e:
+                    raise ValueError("Un supported processor message")
+        except WebSocketDisconnect:
+            self.connection = None
+            print(f"instance connection lost: {self.proc.id}")
+            return
+        except Exception as e:
+            raise ValueError("Error parsing message")
+
+    def process_message(self, pipe_msg: UPipeMessage):
+        pass
 
     def handle_exit(self):
         if self.instance_type == InstanceType.SUB_PROCESS:
@@ -66,6 +99,18 @@ class ProcessorInstance:
                 if self.root_process.stdout:
                     self.stdout_q.write(self.root_process.stdout.readline())
             time.sleep(1)
+
+    def request_termination(self):
+        self.state = InstanceState.PENDING_TERMINATION
+        term_req_msg = UPipeMessage(dest=self.proc_id,
+                                    sender=self.proc_id,
+                                    type=UPipeMessageType.REQUEST_TERMINATION,
+                                    scope=UPipeEntityType.PROCESSOR_INSTANCE)
+        self.connection.send_json(term_req_msg)
+
+    def notify_termination(self):
+        self.state = InstanceState.DONE
+        return True
 
     @property
     def color(self):
@@ -122,6 +167,10 @@ class ProcessorInstance:
     @property
     def is_done(self):
         return self.state == InstanceState.DONE
+
+    @property
+    def running(self):
+        return self.state == InstanceState.RUNNING
 
     @property
     def is_launched(self):
