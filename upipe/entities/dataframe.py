@@ -2,11 +2,11 @@ import json
 import pickle
 from enum import IntEnum
 from typing import List, Type, Union, Dict
-
+import uuid
 import numpy as np
 from pydantic import BaseModel
 
-__all__ = ['DType', 'DataFrame']
+__all__ = ['DType', 'DataFrame', 'DataField']
 
 
 def rs232_checksum(the_bytes):
@@ -230,14 +230,18 @@ class DataField:
 
 
 class DataFrame:
-    reserved_keys = ['d', 'pid', 'last', 'forward']
+    """
+    d  - default data field
+    pip - frame pipline id
+    last - marks no more frames are expected
+    """
+    reserved_keys = ['d', 'pid', 'last']
     MAX_FIELD_LIMIT = 255
 
     def __init__(self, data=None):
         self.fields: Dict[str, DataField] = dict()
         if data is not None:
             self.fields['d'] = DataField('d', data)  # "d" is special key, the default key
-        self.byte_arr = self.to_byte_arr()
 
     def add_field(self, key, value):
         f = DataField(key, value)
@@ -290,8 +294,15 @@ class DataFrame:
     @last.setter
     def last(self, flag: bool):
         if not flag:
-            return self.fields.pop('last', None)
+            self.fields.pop('last', None)
+            return
         self.fields['last'] = DataField('last', 1, DType.U8)
+
+    @property
+    def pipe_execution_id(self):
+        if 'pid' not in self.fields:
+            return None
+        return self.fields['pid'].value
 
     @staticmethod
     def encode_field_to_byte_arr(f: DataField):
@@ -313,3 +324,8 @@ class DataFrame:
     @property
     def fields_number(self):
         return len(self.fields)
+
+    def set_pipe_exe_id(self, _id=None):
+        if _id is None:
+            _id = uuid.uuid4().__str__()
+        self.fields['pid'] = DataField('pid', _id)

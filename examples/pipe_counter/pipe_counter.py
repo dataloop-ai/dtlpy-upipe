@@ -44,15 +44,17 @@ async def processor_b():
 
 async def plus_plus():
     print("Hello plus_plus")
-    proc = Processor("b")
+    proc = Processor("a")
     await proc.connect()
     while True:
-        counter = await proc.get_sync()
+        counter = await proc.get()
+        if counter is None:
+            continue
         counter += 1
-        proc.emit(counter)
+        while not await proc.emit(counter):
+            continue
         if counter % 1000 == 0:
             print(f"{counter / 1000}K")
-    print("embedded processor plus_plus completed")
 
 
 async def main():
@@ -61,16 +63,20 @@ async def main():
     pipe.add(a)
     await pipe.start()
     counter = 0
+    val = await pipe.emit_sync(counter)
+    print(f"First inc:{val}")
+    val = await pipe.emit_sync(val)
+    print(f"Second inc:{val}")
     print("Running")
     while pipe.running:
-        counter = await pipe.emit(counter)
-        if counter % 1000 == 0:
+        counter = await pipe.emit_sync(counter)
+        if counter % 100 == 0 and counter > 0:
             print(f"{counter / 1000}K")
         if counter > 5000 == 0:
             print(f"Done : {counter / 1000}K")
-            return
-    pipe.terminate()
-    pipe.wait_for_completion()
+            break
+    await pipe.terminate()
+    await pipe.wait_for_completion()
 
 
 if __name__ == "__main__":

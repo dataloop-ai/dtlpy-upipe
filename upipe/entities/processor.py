@@ -12,7 +12,7 @@ from aiohttp import ClientConnectorError
 from colorama import init, Fore
 
 from .. import node, types, entities
-from ..types import UPipeEntityType
+from ..types import UPipeEntityType, UPipeMessage, SINK_QUEUE_ID
 
 init(autoreset=True)
 
@@ -47,6 +47,7 @@ class Processor:
         self.autoscale = settings.autoscale
         self.in_qs = []
         self.out_qs = []
+        self.sink_q = None
         self.serial = None
         self.registered = False
         self.connected = False
@@ -75,6 +76,7 @@ class Processor:
         self.request_termination = False  # called from manager to notify its over
         self.type = types.UPipeEntityType.PROCESSOR
         self.node_client = node.NodeClient(self.processor_def, self.id, self.on_ws_message)
+        self.current_pipe_execution_id = None
         atexit.register(self.cleanup)
 
     # noinspection PyBroadException
@@ -175,6 +177,9 @@ class Processor:
         return self.in_q_exist(q.id) or self.out_q_exist(q.id)
 
     def add_q(self, q: types.APIQueue):
+        if q.id == SINK_QUEUE_ID:
+            self.sink_q = entities.MemQueue(q)
+            return
         if self.q_exist(q):
             raise BrokenPipeError(f"Q already added to proc {self.id}")
         if q.to_p == self.id and not self.in_q_exist(q.id):
@@ -210,12 +215,11 @@ class Processor:
     def handle_pipelines_message(self, msg_json):
         raise NotImplementedError("Only pipeline object can handle pipeline messages")
 
-    def on_ws_message(self, msg_json):
-        msg = types.UPipeMessage.parse_obj(msg_json)
+    def on_ws_message(self, msg: UPipeMessage):
         if msg.scope == UPipeEntityType.PROCESSOR:
-            self.handle_processor_message(msg_json)
+            self.handle_processor_message(msg)
         if msg.scope == UPipeEntityType.PIPELINE:
-            self.handle_pipelines_message(msg_json)
+            self.handle_pipelines_message(msg)
 
     def get_current_message_data(self):
         if self.proc:
@@ -224,33 +228,43 @@ class Processor:
 
     def get_next_q_to_emit(self):
         if len(self.out_qs) == 0:
-            print(f"Warning:Processor {self.name} emit dropped: No destination")
             return False
         q = self.out_qs[0]
         return q
 
-    async def enqueue(self, q, msg):
+    async def enqueue(self, q, frame):
         if q.host:
-            added = await self.node_client.put_q(q, msg)
+            added = await self.node_client.put_q(q, frame)
         else:
-            added = await q.put(msg)
+            added = await q.put(frame)
         if not added:
             return False
         return True
 
     async def emit(self, data, d_type: entities.DType = None):
-        msg = entities.DataFrame(data)
+        if isinstance(data, entities.DataFrame):
+            frame = data
+        else:
+            frame = entities.DataFrame(data)
+        if self.current_pipe_execution_id:
+            frame.set_pipe_exe_id(self.current_pipe_execution_id)
         q = self.get_next_q_to_emit()
+        if not q and self.sink_q:
+            return await self.enqueue(self.sink_q, frame)
         if not q:
+            print(f"Warning:Processor {self.name} emit dropped: No destination")
             return False
         success = True
         for q in self.out_qs:
-            success = success and await self.enqueue(q, msg)
+            success = success and await self.enqueue(q, frame)
         return success
 
     async def emit_sync(self, data, d_type: entities.DType = None):
-        msg = entities.DataFrame(data)
-        while not await self.out_qs[0].space_available(msg):
+        if isinstance(data, entities.DataFrame):
+            frame = data
+        else:
+            frame = entities.DataFrame(data)
+        while not await self.out_qs[0].space_available(frame):
             await asyncio.sleep(.1)
         return await self.emit(data)
 
@@ -262,6 +276,10 @@ class Processor:
             frame = await q.get()
             if frame:
                 self.consumer_next_q_index += 1
+                if frame.pipe_execution_id:
+                    self.current_pipe_execution_id = frame.pipe_execution_id
+                else:
+                    self.current_pipe_execution_id = None
                 return frame.data
         if self.request_termination:  # no more messages and goodbye requested from pipe
             await self.terminate()

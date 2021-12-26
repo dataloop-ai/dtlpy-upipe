@@ -7,7 +7,7 @@ from multiprocessing import shared_memory
 
 from pydantic.class_validators import Optional
 from pydantic.main import BaseModel
-from typing import List
+from typing import List, Union
 
 from ..types import APIQueue
 from .dataframe import DataFrame
@@ -178,7 +178,7 @@ class MemQueue:
         entry.time = current_time
         self.log.log_dequeue(entry)
 
-    async def get(self) -> DataFrame:
+    async def get(self) -> Union[DataFrame, None]:
         try:
             if self.pending_counter == 0:
                 return None
@@ -255,8 +255,9 @@ class MemQueue:
         finally:
             await self.release_read_lock()
 
-    async def space_available(self, msg: DataFrame):
-        frame_size = msg.size + self.FRAME_HEADER_SIZE
+    async def space_available(self, frame: DataFrame):
+        frame_size = len(frame.to_byte_arr())
+        frame_size = frame_size + self.FRAME_HEADER_SIZE
         if frame_size > self.free_space:
             return False
         return True
@@ -265,7 +266,7 @@ class MemQueue:
         capacity = (self.size - self.Q_CONTROL_SIZE - self.free_space) / self.size
         if capacity > self.MAX_CAPACITY:
             return False
-        body = df.byte_arr
+        body = df.to_byte_arr()
         frame_size = len(body) + self.FRAME_HEADER_SIZE
         if frame_size > self.free_space:
             return False
@@ -309,8 +310,8 @@ class MemQueue:
 
     def print(self):
         return
-        parser = FrameParser(self.mem.buf, self.exe_index)
-        parser.print()
+        # parser = FrameParser(self.mem.buf, self.exe_index)
+        # parser.print()
 
     def get_frame_status(self, frame_start):
         address = frame_start + self.FRAME_STATUS_OFFSET

@@ -2,10 +2,8 @@ import asyncio
 
 import numpy as np
 
-import upipe.types
-from upipe.entities import DataFrame, DType
+from upipe.entities import DataFrame
 from upipe.entities.dataframe import DataField
-from upipe.entities.mem_queue import MemQueue
 
 
 async def test_field_int():
@@ -22,28 +20,34 @@ async def test_field_int():
 
 async def test_int():
     frame = DataFrame(1)
-    frame2 = DataFrame.from_byte_arr(frame.byte_arr)
+    frame2 = DataFrame.from_byte_arr(frame.to_byte_arr())
     for i in range(10):
         frame = DataFrame(i)
-        frame2 = DataFrame.from_byte_arr(frame.byte_arr)
+        frame.set_pipe_exe_id()
+        frame2 = DataFrame.from_byte_arr(frame.to_byte_arr())
         if frame2.data != i:
             raise ValueError(f"Integer was not recovered from data frame:{i}")
+        if frame.pipe_execution_id != frame2.pipe_execution_id:
+            raise ValueError(f"execution id mismatch:{i}")
 
 
 async def test_nd_array(count: int = 100):
     for i in range(count):
         arr = np.random.rand(i % 5, i % 30)
         frame = DataFrame(arr)
-        frame2 = DataFrame.from_byte_arr(frame.byte_arr)
+        frame.set_pipe_exe_id(f"{i}")
+        frame2 = DataFrame.from_byte_arr(frame.to_byte_arr())
         if not np.array_equal(arr, frame2.data):
             raise ValueError(f"ND Array was not recovered from data frame:{i}")
+        if frame2.pipe_execution_id != f"{i}":
+            raise ValueError(f"custom execution id mismatch:{i}")
 
 
 async def test_tuple(count: int = 100):
     for i in range(count):
         tp = (i, i + 1, f"{i}", {"i": i})
         frame = DataFrame(tp)
-        frame2 = DataFrame.from_byte_arr(frame.byte_arr)
+        frame2 = DataFrame.from_byte_arr(frame.to_byte_arr())
         if frame2.data[0] != i or frame2.data[1] != i + 1 or frame2.data[2] != f"{i}" or frame2.data[3]["i"] != i:
             raise ValueError(f"Tuple was not recovered from data frame:{i}")
 
@@ -52,7 +56,7 @@ async def test_arr(count: int = 100):
     for i in range(count):
         arr = [i, i + 1, f"{i}", {"i": i}]
         frame = DataFrame(arr)
-        frame2 = DataFrame.from_byte_arr(frame.byte_arr)
+        frame2 = DataFrame.from_byte_arr(frame.to_byte_arr())
         if frame2.data[0] != i or frame2.data[1] != i + 1 or frame2.data[2] != f"{i}" or frame2.data[3]["i"] != i:
             raise ValueError(f"Array was not recovered from data frame:{i}")
 
@@ -61,7 +65,7 @@ async def test_json(count: int = 10):
     for i in range(count):
         js = {"counter": i}
         frame = DataFrame(js)
-        frame2 = DataFrame.from_byte_arr(frame.byte_arr)
+        frame2 = DataFrame.from_byte_arr(frame.to_byte_arr())
         if frame2.data["counter"] != i:
             raise ValueError(f"JSON was not recovered from data frame:{i}")
 
@@ -70,7 +74,7 @@ async def test_str(count: int = 10):
     for i in range(count):
         test_string = f"{i}"
         frame = DataFrame(test_string)
-        frame2 = DataFrame.from_byte_arr(frame.byte_arr)
+        frame2 = DataFrame.from_byte_arr(frame.to_byte_arr())
         if int(frame2.data) != i:
             raise ValueError(f"STRING was not recovered from data frame:{i}")
 

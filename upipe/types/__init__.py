@@ -3,7 +3,7 @@ from .http_api import APIResponse, UPipeMessage
 from .messages import UPipeMessage, UPipeMessageType, UPipeEntityType
 from .node import APINode, UPipeEntity
 from .performance import NodeUtilizationEntry, node_server, QStatus, ProcUtilizationEntry
-from .pipe import UPipeEntity, APIPipe, APIPipeControlMessage, PipeActionType, PipeExecutionStatus
+from .pipe import UPipeEntity, APIPipe, SINK_QUEUE_ID, APIPipeControlMessage, PipeActionType, PipeExecutionStatus
 from .processor import APIProcSettings, APIProcessor, ProcessorExecutionStatus
 from .mem_queue import APIQueue, APIProcQueues
 from .message_parser import APIPipeStatusMessage, parse_pipe_message

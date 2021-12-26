@@ -35,9 +35,13 @@ class PipeNode(BaseModel):
     children: List[PipeNode] = []
 
 
+SINK_QUEUE_ID = "pipe-sink"
+
+
 class APIPipe(UPipeEntity):
     name: str
     root: APIProcessor
+    sink: APIQueue
     processors: Dict[str, APIProcessor] = {}
     queues: Dict[str, APIQueue] = {}
     type: UPipeEntityType = UPipeEntityType.PIPELINE

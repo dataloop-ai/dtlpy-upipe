@@ -2,7 +2,7 @@ import json
 import pickle
 import os
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, Form
+from fastapi import FastAPI, WebSocket, UploadFile, Form
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse

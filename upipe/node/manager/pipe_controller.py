@@ -10,7 +10,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from ... import types, entities
 from .process_controller import ProcessorController, ProcessorInstance
-from ...types import PipeExecutionStatus, APIProcessor, parse_message
+from ...types import PipeExecutionStatus, APIProcessor, parse_message, APIQueue
 
 
 class PipeController:
@@ -28,15 +28,37 @@ class PipeController:
         self.pipe: Union[types.APIPipe, None] = None
         self.msg_counter = 0
 
+    def get_proc_queues(self, proc_id: str) -> List[APIQueue]:
+        queues: List[APIQueue] = [self.pipe.sink]
+        for qid in self.queues:
+            queue = self.queues[qid]
+            if queue.from_p == proc_id or queue.to_p == proc_id:
+                api_q: APIQueue = queue.queue_def
+                queues.append(api_q)
+        return queues
+
     async def connect_pipe(self, websocket: WebSocket):
         await websocket.accept()
+        messages = []
         msg = types.APIPipeStatusMessage(dest=self.name,
                                          type=types.UPipeMessageType.PIPE_STATUS,
                                          sender=self.api_def.id,
                                          status=self.status,
                                          pipe_name=self.name,
                                          scope=types.UPipeEntityType.PIPELINE)
-        await websocket.send_json(msg.dict())
+        messages.append(msg.dict())
+        queues = self.get_proc_queues(self.pipe.root.id)
+        q_dict = {}
+        for q in queues:
+            q_dict[q.id] = q
+        queues_def = types.APIProcQueues(proc_id=self.pipe.root.id, queues=q_dict)
+        q_update_msg = types.UPipeMessage(dest=self.pipe.root.id,
+                                          sender=self.pipe.root.id,
+                                          type=types.UPipeMessageType.Q_UPDATE,
+                                          body=queues_def,
+                                          scope=types.UPipeEntityType.PROCESSOR)
+        messages.append(q_update_msg.dict())
+        await websocket.send_json(messages)
         self.connections.append(websocket)
         await self.ws_monitor(websocket)
 

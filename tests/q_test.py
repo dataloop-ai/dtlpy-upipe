@@ -66,6 +66,7 @@ async def test_str(count: int = 10):
                                       size=200))
     for i in range(count):
         frame = DataFrame(f"{i}")
+        frame.set_pipe_exe_id()
         if await q.put(frame):
             print(f"{i} str write")
             out: DataFrame = await q.get()
@@ -75,6 +76,8 @@ async def test_str(count: int = 10):
             if int(out.data) != i:
                 q.print()
                 raise ValueError
+            if out.pipe_execution_id != frame.pipe_execution_id:
+                raise ValueError("Executing id mismatch")
             print(f"{i} str read")
         else:
             q.print()

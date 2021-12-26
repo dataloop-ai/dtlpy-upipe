@@ -11,7 +11,7 @@ import aiohttp
 import websocket
 from aiohttp import FormData, ClientSession, ServerDisconnectedError
 
-from upipe.types import UPipeEntity, UPipeEntityType
+from upipe.types import UPipeEntity, UPipeEntityType, parse_message
 from .. import types
 
 counter = 0
@@ -148,14 +148,18 @@ class NodeClient:
             return
         self.socket.send(msg.json())
 
-    def handle_message(self, message):
+    def handle_message(self, message_str: str):
         global counter
         # noinspection PyBroadException
         try:
-            json_msg = json.loads(message)
-            msg = types.UPipeMessage.from_json(json_msg)
+            json_msg = json.loads(message_str)
+            if isinstance(json_msg, list):
+                messages = [parse_message(m) for m in json_msg]
+            else:
+                messages = [parse_message(json_msg)]
             if self.message_handler:
-                self.message_handler(json_msg)
+                for m in messages:
+                    self.message_handler(m)
         except Exception as e:
             print(f"Error on message processing :{self.agent_id}:{str(e)}")
             raise ConnectionError(f"Error on socket message: {self.agent_id}")

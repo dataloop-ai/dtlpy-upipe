@@ -78,11 +78,9 @@ class ComputeNode:
         queues = types.APIProcQueues(proc_id=proc_id)
         for p in self.pipe_controllers:
             pipe: PipeController = self.pipe_controllers[p]
-            for qid in pipe.queues:
-                queue = pipe.queues[qid]
-                if queue.from_p == proc_id or queue.to_p == proc_id:
-                    api_q: types.APIQueue = queue.queue_def
-                    queues.queues[api_q.id] = api_q
+            pipe_queues = pipe.get_proc_queues(proc_id)
+            for q in pipe_queues:
+                queues.queues[q.id] = q
         return queues
 
     def notify_termination(self, pid: int, proc: types.UPipeEntity):
@@ -377,7 +375,7 @@ class ComputeNode:
                 pipe = self.pipe_controllers[pipe_name]
                 running_instances = self.monitor_pipe(pipe_name)
                 if running_instances == 0:
-                    print(Fore.CYAN + Back.GREEN + f"Pipe {pipe_name} completed ...")
+                    print(Fore.BLACK + Back.GREEN + f"Pipe {pipe_name} completed ...")
                     pipe.cleanup()
             self.log_node_utilization()
             self.check_autoscale()
