@@ -25,7 +25,7 @@ with open('LICENSE') as f:
 with open('requirements.txt') as f:
     requirements = f.read()
 
-setup(name='micropipelines',
+setup(name='upipe',
       version='0.1.5',
       description='Micro Pipelines for Dataloop platform',
       author='Eran Shlomo',

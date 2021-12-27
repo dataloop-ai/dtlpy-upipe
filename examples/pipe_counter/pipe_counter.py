@@ -1,50 +1,13 @@
 import asyncio
 
-from upipe import Processor, Pipe, DType
+from upipe import Processor, Pipe
 
 limit = 100000
 
 
-async def processor_a():
-    global limit
-    print("Hello embedded processor a")
-    me = Processor("a")
-    await me.connect()
-    print("a connected")
-    val = 1
-    while True:
-        if await me.emit(val, DType.U32):
-            if val % 1000 == 0:
-                print(f"{val / 1000}K")
-            if val == limit:
-                break
-            val += 1
-        else:
-            print('failed')
-    print("a done")
-
-
-async def processor_b():
-    global limit
-    print("Hello embedded processor b")
-    proc = Processor("b")
-    await proc.connect()
-    while True:
-        try:
-            counter = await proc.get_sync()
-            if counter == limit:
-                break
-        except TimeoutError:
-            print("timeout")
-            break
-        if counter % 1000 == 0:
-            print(f"{counter / 1000}K")
-    print("embedded processor b completed")
-
-
 async def plus_plus():
     print("Hello plus_plus")
-    proc = Processor("a")
+    proc = Processor("plus_plus")
     await proc.connect()
     while True:
         counter = await proc.get()
@@ -53,12 +16,12 @@ async def plus_plus():
         counter += 1
         while not await proc.emit(counter):
             continue
-        if counter % 1000 == 0:
-            print(f"{counter / 1000}K")
+        if counter % 100 == 0:
+            print(f"from proc: {counter / 1000}K")
 
 
 async def main():
-    a = Processor('a', func=plus_plus)
+    a = Processor('plus_plus', func=plus_plus)
     pipe = Pipe('plus-one')
     pipe.add(a)
     await pipe.start()
@@ -71,7 +34,7 @@ async def main():
     while pipe.running:
         counter = await pipe.emit_sync(counter)
         if counter % 100 == 0 and counter > 0:
-            print(f"{counter / 1000}K")
+            print(f"from main: {counter / 1000}K")
         if counter > 5000 == 0:
             print(f"Done : {counter / 1000}K")
             break
