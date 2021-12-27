@@ -81,6 +81,11 @@ class ComputeNode:
             pipe_queues = pipe.get_proc_queues(proc_id)
             for q in pipe_queues:
                 queues.queues[q.id] = q
+            out_q_cout = len([q for qid in queues.queues if queues.queues[qid].from_p == proc_id])
+            if out_q_cout == 0:
+                proc_sink = types.APIQueue(from_p=proc_id, to_p=pipe.pipe.id, id=pipe.pipe.sink.id,
+                                           size=pipe.pipe.sink.size, name=pipe.pipe.sink.id)
+                queues.queues[proc_sink.id] = proc_sink
         return queues
 
     def notify_termination(self, pid: int, proc: types.UPipeEntity):

@@ -29,7 +29,7 @@ class PipeController:
         self.msg_counter = 0
 
     def get_proc_queues(self, proc_id: str) -> List[APIQueue]:
-        queues: List[APIQueue] = [self.pipe.sink]
+        queues: List[APIQueue] = []
         for qid in self.queues:
             queue = self.queues[qid]
             if queue.from_p == proc_id or queue.to_p == proc_id:

@@ -13,6 +13,7 @@ class PipeFrameFuture(asyncio.Future):
     def __init__(self):
         super().__init__()
         self.created_time_ms = time.time() * 1000
+        self.executed = False
 
 
 class Pipe(Processor):
@@ -109,7 +110,9 @@ class Pipe(Processor):
         if success:
             self.executing_frames[frame.pipe_execution_id] = PipeFrameFuture()
             await asyncio.wait([self.executing_frames[frame.pipe_execution_id]])
-            result: entities.DataFrame = self.executing_frames[frame.pipe_execution_id].result()
+            result_future = self.executing_frames[frame.pipe_execution_id]
+            result_future.executed = True
+            result: entities.DataFrame = result_future.result()
             return result.data
         return False
 
@@ -139,10 +142,15 @@ class Pipe(Processor):
 
     @property
     def pipe_def(self):
-        sink: APIQueue = APIQueue(name="pipe_sink_q", from_p="*", to_p=self.processor_def.id,
+        sink: APIQueue = APIQueue(name=f"{self.id}_{SINK_QUEUE_ID}",
+                                  from_p="*",
+                                  to_p=self.processor_def.id,
                                   size=self.input_buffer_size,
-                                  id=SINK_QUEUE_ID)
-        pipe_api_def = types.APIPipe(name=self.name, id=self.name, root=self.processor_def, sink=sink)
+                                  id=f"{self.id}_{SINK_QUEUE_ID}")
+        pipe_api_def = types.APIPipe(name=self.name,
+                                     id=self.name,
+                                     root=self.processor_def,
+                                     sink=sink)
 
         def map_proc(processor: Processor):
             proc_def = processor.processor_def

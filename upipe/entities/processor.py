@@ -12,7 +12,7 @@ from aiohttp import ClientConnectorError
 from colorama import init, Fore
 
 from .. import node, types, entities
-from ..types import UPipeEntityType, UPipeMessage, SINK_QUEUE_ID
+from ..types import UPipeEntityType, UPipeMessage
 
 init(autoreset=True)
 
@@ -77,6 +77,7 @@ class Processor:
         self.type = types.UPipeEntityType.PROCESSOR
         self.node_client = node.NodeClient(self.processor_def, self.id, self.on_ws_message)
         self.current_pipe_execution_id = None
+        self.enqueue_counter = 0
         atexit.register(self.cleanup)
 
     # noinspection PyBroadException
@@ -177,9 +178,6 @@ class Processor:
         return self.in_q_exist(q.id) or self.out_q_exist(q.id)
 
     def add_q(self, q: types.APIQueue):
-        if q.id == SINK_QUEUE_ID:
-            self.sink_q = entities.MemQueue(q)
-            return
         if self.q_exist(q):
             raise BrokenPipeError(f"Q already added to proc {self.id}")
         if q.to_p == self.id and not self.in_q_exist(q.id):
@@ -239,6 +237,7 @@ class Processor:
             added = await q.put(frame)
         if not added:
             return False
+        self.enqueue_counter +=1
         return True
 
     async def emit(self, data, d_type: entities.DType = None):
