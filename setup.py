@@ -26,7 +26,7 @@ with open('requirements.txt') as f:
     requirements = f.read()
 
 setup(name='upipe',
-      version='0.1.5',
+      version='0.1.6',
       description='Micro Pipelines for Dataloop platform',
       author='Eran Shlomo',
       author_email='eran@dataloop.ai',
@@ -36,6 +36,6 @@ setup(name='upipe',
       packages=find_packages(exclude=('tests', 'docs', 'samples')),
       setup_requires=['wheel'],
       install_requires=requirements,
-      python_requires='>=3.5.4',
+      python_requires='>=3.8',
       include_package_data=True,
       )
