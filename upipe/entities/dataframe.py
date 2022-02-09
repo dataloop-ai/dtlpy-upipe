@@ -5,6 +5,7 @@ from typing import List, Type, Union, Dict
 import uuid
 import numpy as np
 from pydantic import BaseModel
+import warnings
 
 __all__ = ['DType', 'DataFrame', 'DataField']
 
@@ -33,12 +34,14 @@ class DType(IntEnum):
     ND_ARR = 9
     CUSTOM_TYPE_START = 100  # all ids above this type are user generated, TBD dynamic
     CUSTOM_TYPE_END = 200  # all ids above this type are user generated, TBD dynamic
+    UNKNOWN = 230
 
 
 class DataFrameBaseType(BaseModel):
 
     @staticmethod
     def from_byte_array(arr: bytearray):
+        warnings.warn("Using pickle for unknown data type might be a security issue, more here http://docs.dataloop.ai")
         data = pickle.loads(arr)
         return data
 
@@ -83,6 +86,7 @@ def get_data_type(data):
         return DType.ND_ARR
     if is_jsonable(data):  # always keep last, slower than others
         return DType.JSON
+    return DType.UNKNOWN
 
 
 def int_size(d_type: DType):
@@ -155,7 +159,7 @@ def data_from_byte_arr(arr: bytearray, d_type: DType = None):
 
 
 NEXT_CUSTOM_TYPE_ID = DType.CUSTOM_TYPE_START
-MAX_TYPE_ID = DType.CUSTOM_TYPE_END
+MAX_TYPE_ID = 255  # 1 byte
 type_handlers: List[Union[TypeHandler, None]] = [None for _ in range(MAX_TYPE_ID)]
 
 
@@ -179,6 +183,7 @@ def register_data_type(d_model: Type[DataFrameBaseType], d_type=None):
 
 def _register_builtin_types():
     register_data_type(DataFrameBaseType, DType.ND_ARR)
+    register_data_type(DataFrameBaseType, DType.UNKNOWN)
 
 
 _built_in_register_done = False
