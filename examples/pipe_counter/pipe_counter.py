@@ -25,6 +25,7 @@ async def main():
     pipe = Pipe('plus-one')
     pipe.add(a)
     await pipe.start()
+    val = await pipe.sink_q.get()
     counter = 0
     val = await pipe.emit_sync(counter)
     print(f"First inc:{val}")
