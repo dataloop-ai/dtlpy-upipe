@@ -10,11 +10,13 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
-
 @router.get("/nodes")
 async def read_nodes():
     return types.APIResponse(success=True, data=[node.api_def.dict()])
 
+@router.get("/queues")
+async def read_queues():
+    return types.APIResponse(success=True, data=node.queues_def)
 
 @router.get("/pipes")
 async def read_pipes():

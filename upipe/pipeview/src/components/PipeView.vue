@@ -1,12 +1,29 @@
 <template>
 <div v-if="pipe">
-    Pipe {{pipe.pipeDef.name}} : {{statusLine}}
-    <q-btn-group push>
-        <q-btn :disable="pipe.status==1" push label="Run" @click="toggleRun" :icon="running?'pause_circle':'play_circle'" />
-        <q-btn push label="Second" icon="visibility" />
-        <q-btn push label="Third" icon="update" />
-    </q-btn-group>
-    <processors-list :pipeId="pipeId"/>
+    <div v-if="pipe.pipeDef" class="row">
+        <div  class="col-4">
+            Pipe {{pipe.pipeDef.name}} : {{statusLine}}
+        </div>
+        <div class="col">
+            <q-icon v-if="pipe.connected" name="fas fa-network-wired"/>
+            <q-icon v-else name="fas fa-exclamation-circle"/>
+        </div>
+    </div>
+    <div v-else class="row">
+        Error loading pipe
+    </div>
+    <div class="row">
+        <div class="col">
+            <q-btn-group push>
+            <q-btn :disable="pipe.status==1" push label="Run" @click="toggleRun" :icon="running?'pause_circle':'play_circle'" />
+            <q-btn push label="Second" icon="visibility" />
+            <q-btn push label="Third" icon="update" />
+        </q-btn-group>
+        </div>
+    </div>
+    <div class="row" v-if="pipe.pipeDef">
+        <processors-list :pipeId="pipeId"/>
+    </div>
 </div>
 <div id="pv">
 </div>
@@ -154,7 +171,13 @@ export default defineComponent({
     },
     watch: {
         pipeId: function () {
-            render(this.pipe)
+            if (this.pipe) {
+                render(this.pipe)
+            }
+        },
+        pipe: function (newPipe:Pipe|undefined, oldPipe:Pipe|undefined) {
+            oldPipe?.disconnect()
+            newPipe?.connect()
         }
     },
     computed: {
@@ -168,6 +191,9 @@ export default defineComponent({
             return this.pipe.status === PipeExecutionStatus.RUNNING
         },
         statusLine () {
+            if (!this.pipe) {
+                return 'NA'
+            }
             switch (this.pipe.status) {
                 case PipeExecutionStatus.INIT:
                     return 'init'
@@ -189,6 +215,10 @@ export default defineComponent({
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     setup (_props) {
         return {}
-    }
+    }/*,
+    mounted () {
+    },
+    beforeUnmount () {
+    } */
 })
 </script>

@@ -10,7 +10,8 @@ from colorama import Fore, Back, Style
 from fastapi import WebSocket
 from starlette.websockets import WebSocketDisconnect
 
-from upipe.types import UPipeEntityType, UPipeMessage, UPipeMessageType, parse_message, APIProcessor
+from upipe.types import UPipeEntityType, UPipeMessage, UPipeMessageType, parse_message, APIProcessor, \
+    ProcessStatsMessage, ProcessPerformanceStats
 
 
 class InstanceType(IntEnum):
@@ -43,6 +44,7 @@ class ProcessorInstance:
         self.state = InstanceState.LAUNCHED
         self.connection: Union[None, WebSocket] = None
         self.msg_counter = 0
+        self.stats: Union[None, ProcessPerformanceStats] = None
         ProcessorInstance.next_color_index += 1
         if ProcessorInstance.next_color_index >= len(self.colors):
             ProcessorInstance.next_color_index = 0
@@ -80,8 +82,12 @@ class ProcessorInstance:
         except Exception as e:
             raise ValueError("Error parsing message")
 
-    def process_message(self, pipe_msg: UPipeMessage):
-        pass
+    def update_stats(self, status_message: ProcessStatsMessage):
+        self.stats = status_message.stats
+
+    def process_message(self, process_message: UPipeMessage):
+        if process_message.type == UPipeMessageType.PROCESS_STATUS:
+            self.update_stats(process_message)
 
     def handle_exit(self):
         if self.instance_type == InstanceType.SUB_PROCESS:

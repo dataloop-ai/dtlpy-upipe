@@ -20,7 +20,6 @@ def is_jsonable(x):
     except (TypeError, OverflowError):
         return False
 
-
 class DType(IntEnum):
     U8 = 1
     U16 = 2

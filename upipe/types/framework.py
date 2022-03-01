@@ -1,12 +1,15 @@
 from typing import List
 
 from pydantic import BaseModel
-from pydantic.class_validators import Optional
-from .base import UPipeEntityType, UPipeEntity
+
+from . import NodePerformanceStats, APINodeUsageMessage
+from .base import UPipeEntityType
+from .performance import QueuePerformanceStats
 
 from .pipe import APIPipe, APIPipeControlMessage, APIPipeStatusMessage
 from .node import APINode
-from .processor import APIProcess, APIProcessor, APIProcessorInstance
+from .processor import APIProcessor
+from .processor_instance import APIProcessorInstance, APIProcess
 from .http_api import APIResponse
 
 
@@ -21,3 +24,7 @@ class UpipeEntities(BaseModel):
     entity_type: UPipeEntityType
     control_message: APIPipeControlMessage
     status_message: APIPipeStatusMessage
+    node_stats: NodePerformanceStats
+    node_stats_message: APINodeUsageMessage
+    queue_stats: QueuePerformanceStats
+

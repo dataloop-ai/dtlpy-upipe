@@ -5,7 +5,7 @@ import time
 
 from .manager import *
 from .client import *
-
+default_port = 2992
 def start_node():
     interpreter_path = sys.executable
     root_path = manager.ComputeNode.root_path()

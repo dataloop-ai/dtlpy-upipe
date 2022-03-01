@@ -14,10 +14,12 @@ from fastapi import WebSocket
 
 from ... import entities, utils
 from ... import types as up_types
-from .processor_instance import InstanceType, ProcessorInstance, InstanceState
-
+from .process_instance import InstanceType, ProcessorInstance, InstanceState
 
 # This is a Queue that behaves like stdout
+from ...types.performance import ProcessorPerformanceStats
+
+
 class StdoutQueue(Queue):
     def __init__(self, *args, **kwargs):
         ctx = multiprocessing.get_context()
@@ -98,6 +100,20 @@ class ProcessorController:
                 return i
         return None
 
+    def stats(self):
+        try:
+            instances_stats = []
+            for i in self.instances:
+                if i.stats is None:
+                    continue
+                instances_stats.append(i.stats)
+            stats = ProcessorPerformanceStats(processor_id=self.id, instances_stats=instances_stats)
+            return stats
+        except Exception as e:
+            print("Error on instance stats collection")
+            print(str(e))
+
+
     def notify_termination(self, pid: int):
         instance = self.get_instance_by_pid(pid)
         if instance:
@@ -135,20 +151,20 @@ class ProcessorController:
         print(f"{self.proc.name} instance launched, pid: {runner.pid}")
         self._instances.append(runner)
 
-    def register_instance(self):
-        if len(self.launched_instances) == 0:
-            raise BrokenPipeError("Missing launch instances error")
-        launched_instance = self.launched_instances[0]
-        new_instance_id = self.allocate_new_instance_id()
-        launched_instance.instance_id = new_instance_id
-        launched_instance.state = InstanceState.RUNNING
-        return new_instance_id
-
-    def allocate_new_instance_id(self):
-        last_instance_id = self._control_mem.read_int(self.LAST_INSTANCE_ID_POINTER)
-        new_instance_id = last_instance_id + 1
-        self._control_mem.write_int(self.LAST_INSTANCE_ID_POINTER, new_instance_id)
-        return new_instance_id
+    # def register_instance(self):
+    #     if len(self.launched_instances) == 0:
+    #         raise BrokenPipeError("Missing launch instances error")
+    #     launched_instance = self.launched_instances[0]
+    #     new_instance_id = self.allocate_new_instance_id()
+    #     launched_instance.instance_id = new_instance_id
+    #     launched_instance.state = InstanceState.RUNNING
+    #     return new_instance_id
+    #
+    # def allocate_new_instance_id(self):
+    #     last_instance_id = self._control_mem.read_int(self.LAST_INSTANCE_ID_POINTER)
+    #     new_instance_id = last_instance_id + 1
+    #     self._control_mem.write_int(self.LAST_INSTANCE_ID_POINTER, new_instance_id)
+    #     return new_instance_id
 
     @property
     def executable(self):
@@ -182,6 +198,10 @@ class ProcessorController:
     @property
     def name(self):
         return self.proc.name
+
+    @property
+    def id(self):
+        return self.proc.id
 
     @property
     def cpu(self):

@@ -106,6 +106,10 @@ async def proc_websocket_endpoint(websocket: WebSocket, pid: str):
 async def pipe_websocket_endpoint(websocket: WebSocket, pipe_id: str):
     await node.attach_pipe(pipe_id, websocket)
 
+@fast_api.websocket("/ws/node/{node_id}")
+async def pipe_websocket_endpoint(websocket: WebSocket, node_id: str):
+    await node.attach(node_id, websocket)
+
 @fast_api.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     print(exc.errors())

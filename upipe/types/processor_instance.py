@@ -2,7 +2,7 @@ from enum import IntEnum
 
 from pydantic.class_validators import Optional
 
-from . import APIProcessor, UPipeMessage
+from . import APIProcessor, UPipeMessage, ProcessPerformanceStats
 from .base import UPipeEntityType, UPipeEntity
 
 
@@ -27,6 +27,9 @@ class APIProcess(APIProcessor):
     pid: Optional[int]
     type: UPipeEntityType = UPipeEntityType.PROCESS
 
+class ProcessStatsMessage(UPipeMessage):
+    pid: int
+    stats: ProcessPerformanceStats
 
 class APIInstanceActionMessage(UPipeMessage):
     action: ProcessorInstanceAction

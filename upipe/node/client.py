@@ -10,7 +10,7 @@ from typing import Dict
 import aiohttp
 import websocket
 from aiohttp import FormData, ClientSession, ServerDisconnectedError
-
+from .manager import node_main
 from upipe.types import UPipeEntity, UPipeEntityType, parse_message
 from .. import types
 

@@ -6,19 +6,23 @@ import sys
 import os
 import time
 from enum import IntEnum
-from typing import Dict, List, Union
+from typing import Dict, List, Union, Callable
 
 import numpy as np
 import requests
 from colorama import init, Fore, Back
 from fastapi import WebSocket
+from starlette.websockets import WebSocketDisconnect
 
 from ... import entities, types, utils
 from .node_config import NodeConfig
 
 from .pipe_controller import PipeController
-from .node_utils import kill_em_all, get_process_by_path, count_process_by_path
-from ...types import UPipeEntityType
+from .node_utils import kill_em_all, get_process_by_path, count_process_by_path, WebsocketHandler
+from ...types import UPipeEntityType, APIQueue
+from ...types.node import APINodeResource, ResourceType
+from ...types.performance import NodePerformanceStats, CPUPerformanceMetric, MemoryPerformanceMetric, \
+    DiskPerformanceMetric, ProcessorPerformanceStats
 from ...types.pipe import PipelineAlreadyExist
 
 init(autoreset=True)
@@ -68,11 +72,12 @@ class ComputeNode:
         self.primary_instance = False
         self.mem: utils.SharedMemoryBuffer = None
         self.server_process = None
-        self.node_usage_history: List[types.NodeUtilizationEntry] = []
+        self.node_usage_history: List[types.NodePerformanceStats] = []
         self.last_scale_time = time.time()
         self.scale_block_time = 10  # time to wait before scaling again, seconds
         self.pipe_controllers: Dict[str, PipeController] = {}
         self._node_ready = False
+        self.connections: List[WebsocketHandler] = []
 
     def get_proc_queues(self, proc_id: str) -> types.APIProcQueues:
         queues = types.APIProcQueues(proc_id=proc_id)
@@ -206,6 +211,18 @@ class ComputeNode:
             pipe = self.pipe_controllers[pipe_id]
             await pipe.connect_pipe(websocket)
 
+    async def attach(self, node_id: str, websocket: WebSocket):
+        handler = WebsocketHandler("node", websocket, self.process_message)
+        await handler.init()
+        self.connections.append(handler)
+        try:
+            await handler.monitor()
+        except WebSocketDisconnect:
+            self.connections.remove(handler)
+
+    def send_hw_usage_stats(self, hw_stats: NodePerformanceStats):
+        pass
+
     def process_message(self, proc_msg: types.UPipeMessage):
         try:
             if proc_msg.scope == types.UPipeEntityType.PIPELINE:
@@ -280,14 +297,49 @@ class ComputeNode:
 
     def log_node_utilization(self):
         cpu = psutil.cpu_percent()
+        cores = psutil.cpu_percent(percpu=True)
+        cores_usage = []
+        for core_id in range(len(cores)):
+            core_cpu = CPUPerformanceMetric(value=cores[core_id], core_id=f"core_{core_id}")
+            cores_usage.append(core_cpu)
         memory = psutil.virtual_memory().percent
-        node_usage = types.NodeUtilizationEntry(cpu=cpu, memory=memory)
-        self.node_usage_history.append(node_usage)
-        while len(self.node_usage_history) > self.NODE_USAGE_HISTORY_LIMIT:
-            del self.node_usage_history[0]
+        disks_stats = []
+        for p in psutil.disk_partitions():
+            disk_usage = psutil.disk_usage(p.mountpoint)
+            disk_usage_metric = DiskPerformanceMetric(value=disk_usage.percent, id=p.device)
+            disks_stats.append(disk_usage_metric)
         for pipe_name in self.pipe_controllers:
             p = self.pipe_controllers[pipe_name]
             p.log_pipe_utilization()
+        queues_usage = []
+        processor_usage:List[ProcessorPerformanceStats] = []
+        for pipe_name in self.pipe_controllers:
+            p = self.pipe_controllers[pipe_name]
+            for qid in p.queues:
+                q = p.queues[qid]
+                queues_usage.append(q.stats())
+            for processor_id in p.processors:
+                p_controller = p.processors[processor_id]
+                p_stats = p_controller.stats()
+                p_stats.pipe_id = p.pipe.id
+                processor_usage.append(p_stats)
+        node_usage = types.NodePerformanceStats(node_id=self.node_id,
+                                                cpu_total=CPUPerformanceMetric(value=cpu, core_id='total_cpu'),
+                                                memory=MemoryPerformanceMetric(id=memory, value=memory),
+                                                cores_usage=cores_usage, disks_usage=disks_stats,
+                                                queues_usage=queues_usage,
+                                                processors_usage=processor_usage)
+        self.node_usage_history.append(node_usage)
+        while len(self.node_usage_history) > self.NODE_USAGE_HISTORY_LIMIT:
+            del self.node_usage_history[0]
+
+        msg = types.APINodeUsageMessage(dest=self.name,
+                                        type=types.UPipeMessageType.NODE_STATUS,
+                                        sender=self.api_def.id,
+                                        stats=node_usage,
+                                        scope=types.UPipeEntityType.NODE, )
+        for connection in self.connections:
+            connection.send_sync(msg)
 
     # noinspection PyTypeChecker
     def is_scale_down_required(self):
@@ -297,8 +349,8 @@ class ComputeNode:
         if time_since_last_autoscale < self.scale_block_time:
             return False
         weights = [i ** 2 for i in range(len(self.node_usage_history))]
-        cpu = int(np.ma.average([u.cpu for u in self.node_usage_history], weights=weights))
-        memory = int(np.ma.average([u.memory for u in self.node_usage_history], weights=weights))
+        cpu = int(np.ma.average([u.cpu_total.value for u in self.node_usage_history], weights=weights))
+        memory = int(np.ma.average([u.memory.value for u in self.node_usage_history], weights=weights))
         # print(Fore.GREEN + f"CPU:{cpu}%, MEM:{memory}%")
         if cpu > 90:
             return True
@@ -311,8 +363,8 @@ class ComputeNode:
         if time_since_last_autoscale < self.scale_block_time:
             return False
         weights = [i ** 2 for i in range(len(self.node_usage_history))]
-        cpu = int(np.ma.average([u.cpu for u in self.node_usage_history], weights=weights))
-        memory = int(np.ma.average([u.memory for u in self.node_usage_history], weights=weights))
+        cpu = int(np.ma.average([u.cpu_total.value for u in self.node_usage_history], weights=weights))
+        memory = int(np.ma.average([u.memory.value for u in self.node_usage_history], weights=weights))
         # cpu = int(np.mean([u.cpu for u in self.node_usage_history]))
         # memory = int(np.mean([u.cpu for u in self.node_usage_history]))
         print(Fore.GREEN + f"CPU:{cpu}%, MEM:{memory}%")
@@ -351,6 +403,9 @@ class ComputeNode:
                         break
         return running_instances
 
+    def log_resource_usage(self):
+        pass
+
     @property
     def running_pipes_count(self):
         count = 0
@@ -369,6 +424,7 @@ class ComputeNode:
             print(waiting_print)
         while True:
             await asyncio.sleep(1)
+            self.log_node_utilization()
             if self.running_pipes_count == 0:
                 continue
             for pipe_name in self.pipe_controllers:
@@ -377,15 +433,41 @@ class ComputeNode:
                 if running_instances == 0:
                     print(Fore.BLACK + Back.GREEN + f"Pipe {pipe_name} completed ...")
                     pipe.cleanup()
-            self.log_node_utilization()
             self.check_autoscale()
             if self.running_pipes_count == 0:
                 print(waiting_print)
 
+    def get_available_resources(self):
+        resources = [APINodeResource(type=ResourceType.CPU, id=f"total_cpu", name=f"CPU total", size=1)]
+        for i in range(psutil.cpu_count()):
+            resources.append(APINodeResource(type=ResourceType.CPU, id=f"core_{i}", name=f"Core {i}", size=1))
+        resources.append(
+            APINodeResource(type=ResourceType.MEMORY, id='memory', name=f"Memory", size=psutil.virtual_memory().total))
+        for p in psutil.disk_partitions():
+            disk_usage = psutil.disk_usage(p.mountpoint)
+            resources.append(APINodeResource(type=ResourceType.STANDARD_STORAGE, id=p.device, name=f"Disk({p.device})",
+                                             size=disk_usage.total))
+        return resources
+
     @property
     def api_def(self):
+        resources = self.get_available_resources()
         return types.APINode(id=self.name, type=UPipeEntityType.NODE, controller=False, name=self.name,
-                             host_name=self.host_name)
+                             host_name=self.host_name, resources=resources)
+
+    @property
+    def queues(self) -> List[entities.MemQueue]:
+        queues = []
+        for pipe_name in self.pipe_controllers:
+            p = self.pipe_controllers[pipe_name]
+            for qid in p.queues:
+                q = p.queues[qid]
+                queues.append(q)
+        return queues
+
+    @property
+    def queues_def(self) -> List[APIQueue]:
+        return [q.queue_def for q in self.queues]
 
     @property
     def proc_def(self):

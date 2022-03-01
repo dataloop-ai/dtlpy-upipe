@@ -1,3 +1,5 @@
+import hashlib
+import json
 from enum import IntEnum
 from pydantic import BaseModel
 from pydantic.class_validators import Optional
@@ -17,6 +19,8 @@ class UPipeMessageType(IntEnum):
     CONFIG_UPDATE = 9
     REGISTRATION_INFO = 10
     INSTANCE_ACTION = 11
+    NODE_STATUS = 12
+    PROCESS_STATUS = 13
 
 
 class UPipeMessage(BaseModel):
@@ -26,6 +30,9 @@ class UPipeMessage(BaseModel):
     scope: UPipeEntityType
     body: Optional[dict]
 
+    def hash(self):
+        return hashlib.md5(json.dumps(self.dict()).encode('utf-8')).hexdigest()
+
     @staticmethod
-    def from_json(json: dict):
-        return UPipeMessage.parse_obj(json)
+    def from_json(json_: dict):
+        return UPipeMessage.parse_obj(json_)

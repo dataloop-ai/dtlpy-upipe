@@ -2,7 +2,6 @@ from enum import IntEnum
 
 from pydantic import BaseModel
 
-
 class UPipeEntityType(IntEnum):
     PROCESSOR = 1
     PROCESSOR_INSTANCE = 2

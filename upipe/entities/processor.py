@@ -6,13 +6,15 @@ import os
 import sys
 import time
 from enum import IntEnum
+from threading import Thread
 from typing import List
 
 from aiohttp import ClientConnectorError
 from colorama import init, Fore
 
 from .. import node, types, entities
-from ..types import UPipeEntityType, UPipeMessage, SINK_QUEUE_ID
+from ..types import UPipeEntityType, UPipeMessage, SINK_QUEUE_ID, ProcessPerformanceStats
+from ..types.performance import PerformanceMetric, ThroughputPerformanceMetric
 
 init(autoreset=True)
 
@@ -72,6 +74,13 @@ class Processor:
         self.proc_id = f"{self.name}:{self.pid}"
         self.execution_status = ProcessorExecutionStatus.RUNNING
         self.consumer_next_q_index = 0
+        self.processed_counter = 0
+        self.received_counter = 0
+        self.dfps_in = 0
+        self.dfps_out = 0
+        self.last_dfps_calc_time = 0
+        self.last_dfps_processed_counter = 0
+        self.last_dfps_received_counter = 0
         self.interpreter = sys.executable
         self.request_termination = False  # called from manager to notify its over
         self.type = types.UPipeEntityType.PROCESSOR
@@ -133,16 +142,47 @@ class Processor:
         await self.register()
         if not self.connected:
             self.connected = self.node_client.connect()
-        # thread = Thread(target=self.monitor, daemon=True)
-        # thread.start()
+        thread = Thread(target=self.monitor, daemon=True)
+        thread.start()
 
     def get_child(self, name):
         proc = next((p for p in self.children if p.name == name), None)
         return proc
 
+    def calc_dfps(self):
+        current_time_sec = time.time()
+        if self.last_dfps_calc_time == 0:
+            self.last_dfps_calc_time = current_time_sec
+            self.last_dfps_received_counter = self.received_counter
+            self.last_dfps_processed_counter = self.processed_counter
+            return
+        delta_sec = current_time_sec - self.last_dfps_calc_time
+        self.dfps_in = (self.received_counter - self.last_dfps_received_counter) / delta_sec
+        self.dfps_out = (self.processed_counter - self.last_dfps_processed_counter) / delta_sec
+        self.last_dfps_received_counter = self.received_counter
+        self.last_dfps_processed_counter = self.processed_counter
+        self.last_dfps_calc_time = current_time_sec
+        return
+
+    def get_stats(self):
+        return ProcessPerformanceStats(dfps_in=ThroughputPerformanceMetric(value=self.dfps_in),
+                                       dfps_out=ThroughputPerformanceMetric(value=self.dfps_out),
+                                       received_counter=PerformanceMetric(value=self.received_counter),
+                                       processed_counter=PerformanceMetric(value=self.processed_counter),
+                                       pid=os.getpid())
+
     def monitor(self):
         while True:
             time.sleep(1)
+            self.calc_dfps()
+            msg = types.ProcessStatsMessage(dest=self.processor_def.id,
+                                            type=types.UPipeMessageType.PROCESS_STATUS,
+                                            sender=self.id,
+                                            scope=types.UPipeEntityType.PROCESSOR,
+                                            pid=os.getpid(),
+                                            stats=self.get_stats()
+                                            )
+            self.node_client.send_message(msg)
             if not self.connected:
                 continue
 
@@ -250,11 +290,15 @@ class Processor:
             frame.set_pipe_exe_id(self.current_pipe_execution_id)
         q = self.get_next_q_to_emit()
         if not q and self.sink_q:
-            return await self.enqueue(self.sink_q, frame)
+            sink_result = await self.enqueue(self.sink_q, frame)
+            if sink_result:
+                self.processed_counter += 1
+            return sink_result
         if not q:
             print(f"Warning:Processor {self.name} emit dropped: No destination")
             return False
         success = True
+        self.processed_counter += 1
         for q in self.out_qs:
             success = success and await self.enqueue(q, frame)
         return success
@@ -280,6 +324,7 @@ class Processor:
                     self.current_pipe_execution_id = frame.pipe_execution_id
                 else:
                     self.current_pipe_execution_id = None
+                self.received_counter += 1
                 return frame.data
         if self.request_termination:  # no more messages and goodbye requested from pipe
             await self.terminate()

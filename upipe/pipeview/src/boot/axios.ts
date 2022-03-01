@@ -20,6 +20,10 @@ const serverAddress = `${host}:${port}`
 const baseURL = `http://${serverAddress}`
 const wsBaseUrl = `ws://${serverAddress}/ws/connect`
 
+export function nodeWsEndpoint (nodeId:string) {
+  return `ws://${serverAddress}/ws/node/${nodeId}`
+}
+
 export function pipeWsEndpoint (pipeId:string) {
   return `ws://${serverAddress}/ws/pipe/${pipeId}`
 }

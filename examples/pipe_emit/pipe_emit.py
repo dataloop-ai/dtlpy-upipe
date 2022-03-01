@@ -35,7 +35,7 @@ async def main():
 
 def to_run(pipe: Pipe):
     while True:
-        if pipe.status == types.PipeExecutionStatus.RUNNING:
+        if pipe.running:
             break
 
     print('------------ Start emitting to pipe ------------ ')

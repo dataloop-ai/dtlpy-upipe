@@ -1,5 +1,7 @@
 import binascii
 import os
+import struct
+
 import numpy as np
 import time
 from enum import IntEnum
@@ -13,6 +15,8 @@ from ..types import APIQueue
 from .dataframe import DataFrame
 
 import asyncio
+
+from ..types.performance import QueuePerformanceStats, PerformanceMetric, ThroughputPerformanceMetric
 
 debug = False
 
@@ -121,15 +125,21 @@ class MemQueue:
     Q_CONTROL_SIZE = 64
     DATA_START_POINT = Q_CONTROL_SIZE
     R_LOCK_POINTER = 6  # size = 4
-    W_LOCK_POINTER = 10  # size = 4
-    STATUS_POINTER = 14  # size = 1
-    DIRECTION_POINTER = 15  # size = 1
-    ALLOC_POINTER = 16  # size = 4
-    EXE_POINTER = 20  # size = 4
-    ALLOC_COUNTER_POINTER = 24  # size = 4
-    EXE_COUNTER_POINTER = 28  # size = 4
+    R_LOCK__COUNTER_POINTER = 10  # size = 4
+    W_LOCK_POINTER = 14  # size = 4
+    W_LOCK__COUNTER_POINTER = 20  # size = 4
+    STATUS_POINTER = 24  # size = 1
+    DIRECTION_POINTER = 25  # size = 1
+    ALLOC_POINTER = 26  # size = 4
+    EXE_POINTER = 30  # size = 4
+    ALLOC_COUNTER_POINTER = 34  # size = 4
+    EXE_COUNTER_POINTER = 38  # size = 4
+    DFPS_CALC_INTERVAL = 42  # size = 4
+    LAST_DFPS_CALC_TIME = 46  # size = 4
+    DFPS_LAST_ALLOC_COUNTER = 50  # size = 4
+    DFPS_LAST_EXE_COUNTER = 54  # size = 4
     # end of Q header
-    LOCK_TIMEOUT = 0.5
+    LOCK_TIMEOUT = 100
     LOCK_CHECK_INTERVAL = 0.05
     MAX_CAPACITY = 0.90
     WATER_MARK = bytearray()
@@ -167,6 +177,7 @@ class MemQueue:
 
         except FileExistsError:
             self.mem = shared_memory.SharedMemory(name=self.memory_name, size=self.size)
+        self.dfps_interval_ms = 1000
 
     def log_enqueue(self, entry: QLogEntry):
         current_time = time.time() * 1000  # ms
@@ -177,6 +188,16 @@ class MemQueue:
         current_time = time.time() * 1000  # ms
         entry.time = current_time
         self.log.log_dequeue(entry)
+
+    def update_dfps(self):
+        current_time_ms = time.time() * 1000
+        last_dfps_update_time = self.last_dfps_calc_time
+        dfps_interval = self.dfps_interval_ms
+        if current_time_ms - last_dfps_update_time < dfps_interval:
+            return
+        self.dfps_last_exe_counter = self.exe_counter
+        self.dfps_last_alloc_counter = self.alloc_counter
+        self.last_dfps_calc_time = int(current_time_ms)
 
     async def get(self) -> Union[DataFrame, None]:
         try:
@@ -250,6 +271,7 @@ class MemQueue:
                 raise BrokenPipeError(f"Frame CRC32 error at index:{start_exe_index}, exe count:{self.exe_counter} ")
             # done
             frame = DataFrame.from_byte_arr(frame_data)
+            self.update_dfps()
             self.exe_counter += 1
             return frame
         finally:
@@ -303,6 +325,7 @@ class MemQueue:
                 self.mem.buf[frame_address:frame_address + frame_size] = frame
                 self.alloc_index = self.alloc_index + frame_size
                 self.direction = Q_DIRECTION.WRAP
+            self.update_dfps()
             self.alloc_counter += 1
             return True
         finally:
@@ -339,15 +362,27 @@ class MemQueue:
         lock_pid = int.from_bytes(self.mem.buf[address:address + 4], "little")
         my_pid = os.getpid()
         start = time.time()
+        lock_count_address = address + 4
+        lock_release_delay = int.from_bytes(self.mem.buf[lock_count_address:lock_count_address + 2], "little")
+        if lock_release_delay > 0:
+            print(f"lock delay:{lock_release_delay}")
+            await asyncio.sleep(self.LOCK_CHECK_INTERVAL * lock_release_delay)
         while lock_pid != my_pid:
+            attempts = 0
             lock_pid = int.from_bytes(self.mem.buf[address:address + 4], "little")
             if lock_pid == 0:
                 self.mem.buf[address:address + 4] = my_pid.to_bytes(4, "little")
                 lock_pid = int.from_bytes(self.mem.buf[address:address + 4], "little")
                 if lock_pid == my_pid:
+                    if attempts > 0:
+                        self.mem.buf[lock_count_address:lock_count_address + 2] = bytearray(2)
                     return
+                else:
+                    if attempts > 0:
+                        self.mem.buf[lock_count_address:lock_count_address + 2] = attempts.to_bytes(2, "little")
+            attempts += 1
             elapsed = time.time() - start
-            if elapsed > self.LOCK_TIMEOUT:
+            if elapsed > self.LOCK_TIMEOUT + attempts * self.LOCK_CHECK_INTERVAL/2:
                 raise TimeoutError
             await asyncio.sleep(self.LOCK_CHECK_INTERVAL)
 
@@ -360,9 +395,69 @@ class MemQueue:
     async def release_write_lock(self):
         await self.release_lock(self.W_LOCK_POINTER)
 
+    def get_32b_int(self, address):
+        return int.from_bytes(self.mem.buf[address:address + 4], "little")
+
+    def set_32b_int(self, address, value):
+        self.mem.buf[address:address + 4] = value.to_bytes(4, "little")
+
+    def get_64b_int(self, address):
+        return int.from_bytes(self.mem.buf[address:address + 8], "little")
+
+    def set_64b_int(self, address, value):
+        self.mem.buf[address:address + 8] = value.to_bytes(8, "little")
+
+    def get_32b_float(self, address):
+        return struct.unpack("f", self.mem.buf[address:address + 4])[0]
+
+    def set_32b_float(self, address, value):
+        self.mem.buf[address:address + 4] = bytearray(struct.pack('f', value))
+
     @property
     def id(self):
-        return self.name
+        return self.qid
+
+    @property
+    def dfps_interval_ms(self):
+        return self.get_32b_int(self.DFPS_CALC_INTERVAL)
+
+    @dfps_interval_ms.setter
+    def dfps_interval_ms(self, val):
+        self.set_32b_int(self.DFPS_CALC_INTERVAL, val)
+
+    @property
+    def last_dfps_calc_time(self):
+        return self.get_64b_int(self.LAST_DFPS_CALC_TIME)
+
+    @last_dfps_calc_time.setter
+    def last_dfps_calc_time(self, val):
+        self.set_64b_int(self.LAST_DFPS_CALC_TIME, val)
+
+    @property
+    def dfps_last_alloc_counter(self):
+        return self.get_32b_int(self.DFPS_LAST_ALLOC_COUNTER)
+
+    @dfps_last_alloc_counter.setter
+    def dfps_last_alloc_counter(self, val):
+        self.set_32b_int(self.DFPS_LAST_ALLOC_COUNTER, val)
+
+    @property
+    def dfps_last_exe_counter(self):
+        return self.get_32b_int(self.DFPS_LAST_EXE_COUNTER)
+
+    @dfps_last_exe_counter.setter
+    def dfps_last_exe_counter(self, val):
+        self.set_32b_int(self.DFPS_LAST_EXE_COUNTER, val)
+
+    @property
+    def dfps_in(self):
+        dfps_calc_time_delta = time.time() * 1000 - self.last_dfps_calc_time
+        return (self.alloc_counter - self.dfps_last_alloc_counter) / (dfps_calc_time_delta / 1000)
+
+    @property
+    def dfps_out(self):
+        dfps_calc_time_delta = time.time() * 1000 - self.last_dfps_calc_time
+        return (self.exe_counter - self.dfps_last_exe_counter) / (dfps_calc_time_delta / 1000)
 
     @property
     def free_space(self):
@@ -439,3 +534,15 @@ class MemQueue:
     @property
     def status_str(self):
         return f"alloc count:{self.alloc_counter} , exe count: {self.exe_counter} , pending: {self.pending_counter}"
+
+    def stats(self) -> QueuePerformanceStats:
+        return QueuePerformanceStats(dfps_in=ThroughputPerformanceMetric(value=self.dfps_in),
+                                     dfps_out=ThroughputPerformanceMetric(value=self.dfps_out),
+                                     allocation_counter=PerformanceMetric(value=self.alloc_counter),
+                                     exe_counter=PerformanceMetric(value=self.exe_counter),
+                                     pending_counter=PerformanceMetric(value=self.pending_counter),
+                                     allocation_index=PerformanceMetric(value=self.alloc_index),
+                                     exe_index=PerformanceMetric(value=self.exe_index),
+                                     free_space=PerformanceMetric(value=self.free_space),
+                                     size=PerformanceMetric(value=self._data_size),
+                                     q_id=self.id)

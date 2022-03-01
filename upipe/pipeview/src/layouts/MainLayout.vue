@@ -12,23 +12,23 @@
         />
 
         <q-toolbar-title>
-          Quasar App
+          PipeView
         </q-toolbar-title>
 
-        <div>Quasar v{{ $q.version }}</div>
+        <!-- <div>Quasar v{{ $q.version }}</div> -->
+        <div>v{{ appVersion }}</div>
       </q-toolbar>
     </q-header>
 
     <q-drawer
       v-model="leftDrawerOpen"
-      show-if-above
       bordered
     >
       <q-list>
         <q-item-label
           header
         >
-          Essential Links
+          Navigation
         </q-item-label>
 
         <EssentialLink
@@ -47,14 +47,15 @@
 
 <script lang="ts">
 import EssentialLink from 'components/EssentialLink.vue'
-
+/* eslint-disable @typescript-eslint/no-var-requires */
+const pjson = require('../../package.json')
 const linksList = [
   {
-    title: 'Docs',
-    caption: 'quasar.dev',
-    icon: 'school',
-    link: 'https://quasar.dev'
-  },
+    title: 'Main',
+    caption: 'Current pipe view',
+    icon: 'device_hub',
+    link: '/'
+  }/*,
   {
     title: 'Github',
     caption: 'github.com/quasarframework',
@@ -90,7 +91,7 @@ const linksList = [
     caption: 'Community Quasar projects',
     icon: 'favorite',
     link: 'https://awesome.quasar.dev'
-  }
+  } */
 ]
 
 import { defineComponent, ref } from 'vue'
@@ -108,6 +109,7 @@ export default defineComponent({
     return {
       essentialLinks: linksList,
       leftDrawerOpen,
+      appVersion: pjson.version,
       toggleLeftDrawer () {
         leftDrawerOpen.value = !leftDrawerOpen.value
       }

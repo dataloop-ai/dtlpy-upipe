@@ -1,5 +1,4 @@
 import asyncio
-import json
 import time
 from typing import Dict, List, Union
 
@@ -8,9 +7,10 @@ from colorama import Fore
 from fastapi import WebSocket
 from starlette.websockets import WebSocketDisconnect
 
+from .node_utils import WebsocketHandler
 from ... import types, entities
-from .process_controller import ProcessorController, ProcessorInstance
-from ...types import PipeExecutionStatus, APIProcessor, parse_message, APIQueue
+from .processor_controller import ProcessorController, ProcessorInstance
+from ...types import PipeExecutionStatus, APIProcessor, APIQueue
 
 
 class PipeController:
@@ -24,7 +24,7 @@ class PipeController:
         self.node_proc = node_proc
         self.status: types.PipeExecutionStatus = types.PipeExecutionStatus.INIT
         self.name = None
-        self.connections: List[WebSocket] = []
+        self.connections: List[WebsocketHandler] = []
         self.pipe: Union[types.APIPipe, None] = None
         self.msg_counter = 0
 
@@ -38,7 +38,9 @@ class PipeController:
         return queues
 
     async def connect_pipe(self, websocket: WebSocket):
-        await websocket.accept()
+        handler = WebsocketHandler(f"pipe:{self.name}", websocket, self.process_message)
+        await handler.init()
+        self.connections.append(handler)
         messages = []
         msg = types.APIPipeStatusMessage(dest=self.name,
                                          type=types.UPipeMessageType.PIPE_STATUS,
@@ -46,7 +48,7 @@ class PipeController:
                                          status=self.status,
                                          pipe_name=self.name,
                                          scope=types.UPipeEntityType.PIPELINE)
-        messages.append(msg.dict())
+        messages.append(msg)
         queues = self.get_proc_queues(self.pipe.root.id)
         q_dict = {}
         for q in queues:
@@ -57,28 +59,12 @@ class PipeController:
                                           type=types.UPipeMessageType.Q_UPDATE,
                                           body=queues_def,
                                           scope=types.UPipeEntityType.PROCESSOR)
-        messages.append(q_update_msg.dict())
-        await websocket.send_json(messages)
-        self.connections.append(websocket)
-        await self.ws_monitor(websocket)
-
-    async def ws_monitor(self, websocket: WebSocket):
+        messages.append(q_update_msg)
+        await handler.send(messages)
         try:
-            while True:
-                data = await websocket.receive_text()
-                msg = json.loads(data)
-                parsed = parse_message(msg)
-                self.msg_counter += 1
-                try:
-                    self.process_message(parsed)
-                except Exception as e:
-                    raise ValueError("Un supported processor message")
+            await handler.monitor()
         except WebSocketDisconnect:
-            self.connections.remove(websocket)
-            print(f"pipe connection lost: {self.pipe.id}")
-            return
-        except Exception as e:
-            raise ValueError("Error parsing message")
+            self.connections.remove(handler)
 
     def get_instance_by_pid(self, pid: int):
         launched = []
@@ -225,14 +211,17 @@ class PipeController:
 
     async def set_pipe_status(self, status: PipeExecutionStatus):
         self.status = status
+        await self._sync_status()
+
+    async def _sync_status(self):
         msg = types.APIPipeStatusMessage(dest=self.name,
                                          type=types.UPipeMessageType.PIPE_STATUS,
                                          sender=self.api_def.id,
-                                         status=status,
+                                         status=self.status,
                                          pipe_name=self.name,
                                          scope=types.UPipeEntityType.PIPELINE)
         for connection in self.connections:
-            await connection.send_json(msg.dict())
+            await connection.send(msg)
 
     @property
     def pending_termination(self):
@@ -304,6 +293,7 @@ class PipeController:
         for qid in pipe.queues:
             queue = pipe.queues[qid]
             self.queues[qid] = entities.MemQueue(queue)
+        self.queues[pipe.sink.id] = entities.MemQueue(pipe.sink)
         for proc_name in pipe.processors:
             proc = pipe.processors[proc_name]
             proc_queues = self.get_processor_queues(proc_name)

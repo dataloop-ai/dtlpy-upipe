@@ -1,13 +1,15 @@
 /* eslint-disable @typescript-eslint/no-this-alias */
 import { APIPipe, APIProcessor, UPipeMessage, UPipeMessageType, PipeExecutionStatus, APIPipeStatusMessage, APIPipeControlMessage, PipeActionType, UPipeEntityType } from './defs/UpipeEntities'
 import { pipeWsEndpoint } from 'src/boot/axios'
-import { Processor } from './Processor'
+import { Processor } from './processor'
 export class Pipe {
     pipeDef: APIPipe
     processors:Processor[] = []
+    connected = false
+    error = false
     socket: WebSocket | null = null
     fakePid = Math.floor(Math.random() * 10) + Math.pow(2, 30);// TODO, take from server
-    status:PipeExecutionStatus = PipeExecutionStatus.INIT
+    status:PipeExecutionStatus = -1
     constructor (pipeDef: APIPipe) {
         this.pipeDef = pipeDef
         if (this.pipeDef.processors) {
@@ -15,12 +17,20 @@ export class Pipe {
         } 
     }
 
+    getProcessor (processorId:string) {
+        return this.processors.find(p => p.id === processorId)
+    }
+
     onMessage (m:UPipeMessage) {
         if (m.type === UPipeMessageType.PIPE_STATUS) {
             this.status = (m as APIPipeStatusMessage).status
         }
     }
-    
+   
+    disconnect () {
+        if (this.socket) { this.socket.close() }
+    }
+
     connect () {
         // Create WebSocket connection.
         const wsUrl = pipeWsEndpoint(this.pipeDef.id)
@@ -29,8 +39,19 @@ export class Pipe {
         // Connection opened
         this.socket.addEventListener('open', () => {
             console.log(`${this.pipeDef.id} connected`)
+            this.connected = true
         })
-
+        // Connection close
+        this.socket.addEventListener('close', () => {
+            console.log(`${this.pipeDef.id} connection closed`)
+            this.connected = false
+        })
+        // Connection error
+        this.socket.addEventListener('error', () => {
+            console.log(`${this.pipeDef.id} connection error`)
+            this.error = false
+        })
+        
         // Listen for messages
         this.socket.addEventListener('message', (event:MessageEvent) => {
             const msg = JSON.parse(event.data) as UPipeMessage

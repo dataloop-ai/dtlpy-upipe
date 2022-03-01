@@ -1,11 +1,12 @@
 /* eslint-disable @typescript-eslint/no-this-alias */
-import { APIProcessor, UPipeMessage, UPipeMessageType, PipeExecutionStatus, APIPipeStatusMessage } from './defs/UpipeEntities'
+import { APIProcessor, UPipeMessage, UPipeMessageType, PipeExecutionStatus, APIPipeStatusMessage, ProcessorPerformanceStats } from './defs/UpipeEntities'
 import { procWsEndpoint } from 'src/boot/axios'
 export class Processor {
     procDef: APIProcessor
     socket: WebSocket | null = null
     fakePid = Math.floor(Math.random() * 10) + Math.pow(2, 30);// TODO, take from server
     status:PipeExecutionStatus = PipeExecutionStatus.INIT
+    lastStats:ProcessorPerformanceStats | null = null
     constructor (procDef: APIProcessor) {
         this.procDef = procDef
     }
@@ -36,6 +37,14 @@ export class Processor {
             this.onMessage(msg)
             console.log('Message from server ', event.data)
         })
+    }
+
+    get stats () {
+        return this.lastStats
+    }
+
+    updateStats (value:ProcessorPerformanceStats | null) {
+        this.lastStats = value
     }
 
     get id () {

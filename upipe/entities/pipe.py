@@ -10,9 +10,10 @@ control_mem_name = "control_mem"
 
 
 class PipeFrameFuture(asyncio.Future):
-    def __init__(self):
+    def __init__(self, timeout_ms=1000):
         super().__init__()
         self.created_time_ms = time.time() * 1000
+        self.timeout_ms = timeout_ms
 
 
 class Pipe(Processor):
@@ -61,6 +62,8 @@ class Pipe(Processor):
         print(f"{self.name} Registered")
         if not self.node_client.connect():
             raise BrokenPipeError(f"Cant connect pipe : {self.name}")
+        loop = asyncio.get_event_loop()
+        loop.create_task(self.baby_sitter())
 
     async def start(self):
         await self.load()
@@ -69,12 +72,12 @@ class Pipe(Processor):
         self._start_future = asyncio.Future()
         self._completion_future = asyncio.Future()
         await asyncio.wait([self._start_future])
-        loop = asyncio.get_event_loop()
-        loop.create_task(self.baby_sitter())
         print(f"{self.name} running")
 
     async def baby_sitter(self):
-        while self.running:
+        while True:
+            if self.completed:
+                return
             frame = await self.sink_q.get()
             if frame:
                 if frame.pipe_execution_id:
@@ -82,7 +85,7 @@ class Pipe(Processor):
                         raise BrokenPipeError("Completed frame not found on log")
                     self.executing_frames[frame.pipe_execution_id].set_result(frame)
                     continue
-            await asyncio.sleep(.001)
+            await asyncio.sleep(0)
 
     @staticmethod
     def generate_pipe_frame(data, d_type: entities.DType = None):
@@ -101,16 +104,23 @@ class Pipe(Processor):
         success = await super().emit(frame)
         return success
 
-    async def emit_sync(self, data, d_type: entities.DType = None):
+    async def emit_sync(self, data, d_type: entities.DType = None, timeout_ms=500):
+        if timeout_ms < 0:
+            timeout_sec = None
+        else:
+            timeout_sec = timeout_ms / 1000
         if self.status != types.PipeExecutionStatus.RUNNING:
             raise BrokenPipeError("Pipe is not running: data ingestion blocked")
         frame = self.generate_pipe_frame(data, d_type)
         success = await super().emit_sync(frame)
         if success:
             self.executing_frames[frame.pipe_execution_id] = PipeFrameFuture()
-            await asyncio.wait([self.executing_frames[frame.pipe_execution_id]])
-            result: entities.DataFrame = self.executing_frames[frame.pipe_execution_id].result()
-            return result.data
+            await asyncio.wait([self.executing_frames[frame.pipe_execution_id]], timeout=timeout_sec)
+            try:
+                result: entities.DataFrame = self.executing_frames[frame.pipe_execution_id].result()
+                return result.data
+            except asyncio.exceptions.InvalidStateError:
+                raise TimeoutError(f"Timeout : No result in {timeout_ms} ms")
         return False
 
     async def wait_for_completion(self):
@@ -134,15 +144,23 @@ class Pipe(Processor):
         return self.status == types.PipeExecutionStatus.COMPLETED
 
     @property
+    def pending_termination(self):
+        return self.status == types.PipeExecutionStatus.PENDING_TERMINATION
+
+    @property
     def running(self):
         return self.status == types.PipeExecutionStatus.RUNNING
 
     @property
-    def pipe_def(self):
+    def sink_q_def(self):
         sink: APIQueue = APIQueue(name="pipe_sink_q", from_p="*", to_p=self.processor_def.id,
                                   size=self.input_buffer_size,
                                   id=SINK_QUEUE_ID)
-        pipe_api_def = types.APIPipe(name=self.name, id=self.name, root=self.processor_def, sink=sink)
+        return sink
+
+    @property
+    def pipe_def(self):
+        pipe_api_def = types.APIPipe(name=self.name, id=self.name, root=self.processor_def, sink=self.sink_q_def)
 
         def map_proc(processor: Processor):
             proc_def = processor.processor_def
