@@ -121,6 +121,8 @@ class ComputeNode:
 
     @staticmethod
     def launch_server(host='localhost', port=852):
+        ComputeNode.host_name = host
+        ComputeNode.port = port
         my_env = os.environ.copy()
         my_env["UPIPE_HOST"] = host
         my_env["UPIPE_PORT"] = str(port)
@@ -147,6 +149,10 @@ class ComputeNode:
     @staticmethod
     def server_base_url():
         return f"{ComputeNode.host_name}:{ComputeNode.port}"
+
+    @staticmethod
+    def debugger_url():
+        return f"http://{ComputeNode.server_base_url()}/debugger/index.html"
 
     @staticmethod
     def is_node_memory_allocated():

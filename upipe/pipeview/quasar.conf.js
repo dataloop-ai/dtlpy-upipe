@@ -9,6 +9,8 @@
 /* eslint-env node */
 /* eslint-disable @typescript-eslint/no-var-requires */
 const { configure } = require('quasar/wrappers')
+const fse = require('fs-extra')
+const path = require('path')
 
 module.exports = configure(function (ctx) {
   return {
@@ -54,7 +56,21 @@ module.exports = configure(function (ctx) {
     // Full list of options: https://quasar.dev/quasar-cli/quasar-conf-js#Property%3A-build
     build: {
       vueRouterMode: 'hash', // available values: 'hash', 'history'
-
+      afterBuild: (conf) => {
+        console.log(`build done:${conf.quasarConf.build.distDir}`)
+        const destPath = path.join(__dirname, '..', 'node', 'server', 'upipe_viewer')
+        console.log(`build destination:${destPath}`)
+        fse.ensureDirSync(destPath)
+        // eslint-disable-next-line no-undef
+        fse.copySync(conf.quasarConf.build.distDir, destPath, { overwrite: true }, function (err) {
+          if (err) {    
+            console.log('build copy error')         
+            console.error(err)
+          } else {
+            console.log(`deployed to:${destPath}`)
+          }
+        })
+      },
       // transpile: false,
       // publicPath: '/',
 

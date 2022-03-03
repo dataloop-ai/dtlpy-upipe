@@ -12,6 +12,7 @@ from upipe.node.server.node_controller import node
 from upipe import types
 from upipe.node.server import view_api
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from upipe.types.pipe import PipelineAlreadyExist
 
@@ -23,8 +24,10 @@ origins = [
     "http://localhost",
     "http://localhost:8080",
 ]
+main_path = os.path.dirname(os.path.realpath(__file__))
 
 fast_api = FastAPI()
+fast_api.mount("/debugger", StaticFiles(directory=os.path.join(main_path, "upipe_viewer")), name="static")
 fast_api.include_router(view_api.router)
 fast_api.add_middleware(
     CORSMiddleware,
@@ -70,6 +73,7 @@ async def notify_termination(pid: str, proc: types.UPipeEntity):
     instance = node.notify_termination(int(pid), proc)
     return types.APIResponse(success=True)
 
+
 # noinspection PyBroadException
 @fast_api.post("/load_pipe")
 async def load_pipe(pipe: types.APIPipe):
@@ -98,17 +102,21 @@ async def startup_event():
     print("Server ready")
     return
 
+
 @fast_api.websocket("/ws/proc/{pid}")
 async def proc_websocket_endpoint(websocket: WebSocket, pid: str):
     await node.attach_proc(int(pid), websocket)
+
 
 @fast_api.websocket("/ws/pipe/{pipe_id}")
 async def pipe_websocket_endpoint(websocket: WebSocket, pipe_id: str):
     await node.attach_pipe(pipe_id, websocket)
 
+
 @fast_api.websocket("/ws/node/{node_id}")
 async def pipe_websocket_endpoint(websocket: WebSocket, node_id: str):
     await node.attach(node_id, websocket)
+
 
 @fast_api.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
