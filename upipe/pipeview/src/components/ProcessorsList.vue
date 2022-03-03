@@ -109,7 +109,11 @@ const processorsColumns = [
   { name: 'id', align: 'center', label: 'id', field: 'id', sortable: true },
   { name: 'name', align: 'center', label: 'Processor', field: 'name', sortable: true },
   { name: 'status', align: 'center', label: 'Status', field: 'status', sortable: true },
-  { name: 'intancesCount', align: 'center', label: 'Instance count', field: 'stats', format: (val) => `${val?.instances_stats ? val.instances_stats.length : 0}`, sortable: true }
+  { name: 'intancesCount', align: 'center', label: 'Instance count', field: 'stats', format: (val) => `${val?.instances_stats ? val.instances_stats.length : 0}`, sortable: true },
+  { name: 'dfps_in', align: 'center', label: 'DFPS in', field: 'stats', format: (stats) => `${stats ? stats.dfps_in.toFixed(1) : 0}` },
+  { name: 'dfps_out', align: 'center', label: 'DFPS out', field: 'stats', format: (stats) => `${stats ? stats.dfps_out.toFixed(1) : 0}` },
+  { name: 'received', align: 'center', label: 'received', field: 'stats', format: (stats) => `${stats ? stats.received_counter : 0}` },
+  { name: 'processed', align: 'center', label: 'processed', field: 'stats', format: (stats) => `${stats ? stats.processed_counter : 0}` }
 ]
 
 import {

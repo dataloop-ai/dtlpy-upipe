@@ -135,9 +135,9 @@ class MemQueue:
     ALLOC_COUNTER_POINTER = 34  # size = 4
     EXE_COUNTER_POINTER = 38  # size = 4
     DFPS_CALC_INTERVAL = 42  # size = 4
-    LAST_DFPS_CALC_TIME = 46  # size = 4
-    DFPS_LAST_ALLOC_COUNTER = 50  # size = 4
-    DFPS_LAST_EXE_COUNTER = 54  # size = 4
+    LAST_DFPS_CALC_TIME = 46  # size = 8
+    DFPS_LAST_ALLOC_COUNTER = 54  # size = 4
+    DFPS_LAST_EXE_COUNTER = 58  # size = 4
     # end of Q header
     LOCK_TIMEOUT = 100
     LOCK_CHECK_INTERVAL = 0.05
@@ -167,6 +167,8 @@ class MemQueue:
         self.nextMessageAddress = 0
         self.currentAddress = 0
         self.host = q.host
+        self.r_lock_mem = None
+        self.w_lock_mem = None
         try:
             self.mem = shared_memory.SharedMemory(name=self.memory_name, create=True, size=self.size)
             self.mem.buf[:] = bytearray(self.size)
@@ -275,7 +277,7 @@ class MemQueue:
             self.exe_counter += 1
             return frame
         finally:
-            await self.release_read_lock()
+            self.release_read_lock()
 
     async def space_available(self, frame: DataFrame):
         frame_size = len(frame.to_byte_arr())
@@ -329,7 +331,7 @@ class MemQueue:
             self.alloc_counter += 1
             return True
         finally:
-            await self.release_write_lock()
+            self.release_write_lock()
 
     def print(self):
         return
@@ -353,47 +355,36 @@ class MemQueue:
         self.mem.buf[address:address + 4] = size.to_bytes(4, "little")
 
     async def acquire_read_lock(self):
-        await self.acquire_lock(self.R_LOCK_POINTER)
+        self.r_lock_mem = await self.acquire_lock(self.r_lock_memory_name)
 
     async def acquire_write_lock(self):
-        await self.acquire_lock(self.W_LOCK_POINTER)
+        self.w_lock_mem = await self.acquire_lock(self.w_lock_memory_name)
 
-    async def acquire_lock(self, address):
-        lock_pid = int.from_bytes(self.mem.buf[address:address + 4], "little")
-        my_pid = os.getpid()
+    async def acquire_lock(self, lock_name):
         start = time.time()
-        lock_count_address = address + 4
-        lock_release_delay = int.from_bytes(self.mem.buf[lock_count_address:lock_count_address + 2], "little")
-        if lock_release_delay > 0:
-            print(f"lock delay:{lock_release_delay}")
-            await asyncio.sleep(self.LOCK_CHECK_INTERVAL * lock_release_delay)
-        while lock_pid != my_pid:
-            attempts = 0
-            lock_pid = int.from_bytes(self.mem.buf[address:address + 4], "little")
-            if lock_pid == 0:
-                self.mem.buf[address:address + 4] = my_pid.to_bytes(4, "little")
-                lock_pid = int.from_bytes(self.mem.buf[address:address + 4], "little")
-                if lock_pid == my_pid:
-                    if attempts > 0:
-                        self.mem.buf[lock_count_address:lock_count_address + 2] = bytearray(2)
-                    return
-                else:
-                    if attempts > 0:
-                        self.mem.buf[lock_count_address:lock_count_address + 2] = attempts.to_bytes(2, "little")
+        attempts = 0
+        while True:
             attempts += 1
+            try:
+                lock_mem = shared_memory.SharedMemory(name=lock_name, create=True, size=1)
+                return lock_mem
+            except FileExistsError:
+                await asyncio.sleep(self.LOCK_CHECK_INTERVAL)
             elapsed = time.time() - start
-            if elapsed > self.LOCK_TIMEOUT + attempts * self.LOCK_CHECK_INTERVAL/2:
+            if elapsed > self.LOCK_TIMEOUT + attempts * self.LOCK_CHECK_INTERVAL / 2:
                 raise TimeoutError
-            await asyncio.sleep(self.LOCK_CHECK_INTERVAL)
 
-    async def release_lock(self, address):
-        self.mem.buf[address:address + 4] = bytearray(4)
+    def release_read_lock(self):
+        if not self.r_lock_mem:
+            return
+        self.r_lock_mem.close()
+        self.r_lock_mem = None
 
-    async def release_read_lock(self):
-        await self.release_lock(self.R_LOCK_POINTER)
-
-    async def release_write_lock(self):
-        await self.release_lock(self.W_LOCK_POINTER)
+    def release_write_lock(self):
+        if not self.w_lock_mem:
+            return
+        self.w_lock_mem.close()
+        self.w_lock_mem = None
 
     def get_32b_int(self, address):
         return int.from_bytes(self.mem.buf[address:address + 4], "little")
@@ -517,6 +508,14 @@ class MemQueue:
     @property
     def status(self):
         return int.from_bytes(self.mem.buf[self.STATUS_POINTER:self.STATUS_POINTER + 1], "little")
+
+    @property
+    def w_lock_memory_name(self):
+        return f"{self.memory_name}_wlock"
+
+    @property
+    def r_lock_memory_name(self):
+        return f"{self.memory_name}_rlock"
 
     @status.setter
     def status(self, val: LOCK_STATUS):
