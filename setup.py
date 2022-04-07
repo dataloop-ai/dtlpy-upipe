@@ -26,7 +26,7 @@ with open('requirements.txt') as f:
     requirements = f.read()
 
 setup(name='micropipelines',
-      version='0.1.8',
+      version='0.1.9',
       description='Micro Pipelines for Dataloop platform',
       author='Eran Shlomo',
       author_email='eran@dataloop.ai',
