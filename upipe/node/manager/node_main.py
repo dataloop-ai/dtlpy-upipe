@@ -316,7 +316,10 @@ class ComputeNode:
         memory = psutil.virtual_memory().percent
         disks_stats = []
         for p in psutil.disk_partitions():
-            disk_usage = psutil.disk_usage(p.mountpoint)
+            try:
+                disk_usage = psutil.disk_usage(p.mountpoint)
+            except PermissionError:
+                continue
             disk_usage_metric = DiskPerformanceMetric(value=disk_usage.percent, id=p.device)
             disks_stats.append(disk_usage_metric)
         for pipe_name in self.pipe_controllers:
@@ -455,7 +458,10 @@ class ComputeNode:
         resources.append(
             APINodeResource(type=ResourceType.MEMORY, id='memory', name=f"Memory", size=psutil.virtual_memory().total))
         for p in psutil.disk_partitions():
-            disk_usage = psutil.disk_usage(p.mountpoint)
+            try:
+                disk_usage = psutil.disk_usage(p.mountpoint)
+            except PermissionError:
+                continue
             resources.append(APINodeResource(type=ResourceType.STANDARD_STORAGE, id=p.device, name=f"Disk({p.device})",
                                              size=disk_usage.total))
         return resources
