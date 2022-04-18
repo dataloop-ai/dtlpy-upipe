@@ -15,6 +15,9 @@
 # along with MICROPIPELINES.  If not, see <http://www.gnu.org/licenses/>.
 
 from setuptools import setup, find_packages
+import pathlib
+import os
+
 
 with open('README.md') as f:
     readme = f.read()
@@ -26,16 +29,17 @@ with open('requirements.txt') as f:
     requirements = f.read()
 
 setup(name='micropipelines',
-      version='0.1.8',
+      version='0.1.9',
       description='Micro Pipelines for Dataloop platform',
       author='Eran Shlomo',
       author_email='eran@dataloop.ai',
       license='Apache License 2.0',
       long_description=readme,
       long_description_content_type='text/markdown',
-      packages=find_packages(exclude=('tests', 'docs', 'samples')),
+      packages=find_packages(),
       setup_requires=['wheel'],
       install_requires=requirements,
       python_requires='>=3.8',
+      package_data={'upipe': [os.path.relpath(str(p), 'upipe') for p in pathlib.Path('upipe/node/server/upipe_viewer').rglob('*')]},
       include_package_data=True,
       )
