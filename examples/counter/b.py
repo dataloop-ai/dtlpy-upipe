@@ -1,12 +1,12 @@
 import asyncio
 
-from upipe.entities import MemQueue, Processor, DType
+from upipe.entities import MemQueue, Process
 
 
 async def main():
     print("Hello b")
-    proc = Processor("b")
-    await proc.connect()
+    proc = Process("b")
+    await proc.join()
     limit = proc.config['limit']
     counter = 0
     while True:

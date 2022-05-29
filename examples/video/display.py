@@ -3,7 +3,7 @@ from threading import Thread
 import time
 import cv2
 
-from upipe import MemQueue, Processor
+from upipe import Process
 
 counter = 0
 display_frame = None
@@ -30,9 +30,8 @@ async def main():
     global display_frame
     print("Hello display")
 
-    proc = Processor(name='display', entry='display.py')
-    await proc.connect()
-    proc.start()
+    proc = Process(name='display', entry='display.py')
+    await proc.join()
     print("started")
     frame_cnt = 0
     while True:

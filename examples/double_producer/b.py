@@ -1,13 +1,13 @@
 import asyncio
 
 import upipe as up
-from upipe import Processor, Pipe, MemQueue
+from upipe import Process
 
 
 async def main():
     print("Hello b")
-    me = Processor("b")
-    await me.connect()
+    me = Process("b")
+    await me.join()
     print("b connected")
     val = 1
     while True:

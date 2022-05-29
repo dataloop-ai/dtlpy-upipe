@@ -1,11 +1,13 @@
-import os
+import subprocess
 import subprocess
 import sys
-import time
 
-from .manager import *
 from .client import *
+from .manager import *
+
 default_port = 2992
+server_process = None
+
 def start_node():
     interpreter_path = sys.executable
     root_path = manager.ComputeNode.root_path()
@@ -26,7 +28,12 @@ spinner = spinning_cursor()
 
 
 def start_server():
-    manager.ComputeNode.launch_server()
+    global server_process
+    if server_process:
+        return
+    pid_log.start_session(os.getpid())
+    server_process = manager.ComputeNode.launch_server()
+    pid_log.log_pid(server_process.pid, "node server")
     nuke_time = 10
     start_time = time.time()
     while not manager.ComputeNode.is_server_available():
@@ -38,6 +45,7 @@ def start_server():
         #     start_time = time.time()
         print(f"Waiting for node")
         time.sleep(3)
+    print(f"Server ping ok")
 
 
 async def wait_for_node_ready():

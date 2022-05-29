@@ -4,8 +4,8 @@ import upipe as up
 
 
 async def main():
-    a = up.Processor('reader')
-    b = up.Processor('writer')
+    a = up.Processor('reader', entry='reader.py')
+    b = up.Processor('display', entry='writer.py')
     pipe = up.Pipe('video-streamer')
     pipe.add(a).add(b)
     await pipe.start()

@@ -1,7 +1,9 @@
-import logging
 import asyncio
+import logging
+
 import numpy as np
-from upipe import Processor, Pipe, MemQueue, DType
+
+from upipe import Process, DType
 
 logging.basicConfig(level=logging.DEBUG, format='%(process)d - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("reader")
@@ -9,8 +11,8 @@ logger = logging.getLogger("reader")
 
 async def main():
     logger.info("Hello reader")
-    me = Processor("reader")
-    await me.connect()
+    me = Process("reader")
+    await me.join()
     logger.info("reader starter")
 
     frame = np.random.randint(0, 255, (1000, 1000), dtype='uint8')

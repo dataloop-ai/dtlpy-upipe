@@ -1,14 +1,14 @@
 import asyncio
 
-from upipe import Processor, Pipe
+from upipe import Processor, Process, Pipe
 
 limit = 100000
 
 
 async def plus_plus():
     print("Hello plus_plus")
-    proc = Processor("plus_plus")
-    await proc.connect()
+    proc = Process("plus_plus_processor")
+    await proc.join()
     while True:
         counter = await proc.get()
         if counter is None:
@@ -21,8 +21,8 @@ async def plus_plus():
 
 
 async def main():
-    a = Processor('plus_plus', func=plus_plus)
-    pipe = Pipe('plus-one')
+    a = Processor('plus_plus_processor', func=plus_plus)
+    pipe = Pipe('plus-one-pipe')
     pipe.add(a)
     await pipe.start()
     val = await pipe.sink_q.get()

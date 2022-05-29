@@ -1,19 +1,17 @@
 import asyncio
-# import time
-# time.sleep(20)
-from upipe.entities import MemQueue, Processor, DType
+from upipe.entities import MemQueue, Process
 
 
 async def main():
     print("Hello a")
-    me = Processor("a")
-    await me.connect()
+    me = Process("a")
+    await me.join()
     limit = me.config['limit']
     print("a connected")
     val = 1
-    q: MemQueue = me.get_next_q_to_emit()
+    q: MemQueue = me._get_next_q_to_emit()
     while True:
-        if await me.emit(val, DType.U32):
+        if await me.emit(val):
             if val % 10000 == 0:
                 print(f"{val / 1000}K")
             if val == limit:

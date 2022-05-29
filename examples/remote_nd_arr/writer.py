@@ -1,9 +1,9 @@
-import logging
 import asyncio
+import logging
 import sys
 import time
 
-from upipe import MemQueue, Processor
+from upipe import Process
 
 logging.basicConfig(level=logging.DEBUG, format='%(process)d - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("writer")
@@ -11,8 +11,8 @@ logger = logging.getLogger("writer")
 
 async def main():
     logger.info("Hello writer")
-    proc = Processor("writer")
-    await proc.connect()
+    proc = Process("writer")
+    await proc.join()
     logger.info("writer started")
     first = True
     counter = 0

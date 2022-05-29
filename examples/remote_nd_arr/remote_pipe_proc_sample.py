@@ -1,6 +1,6 @@
 import asyncio
 import upipe.types
-from upipe import Processor, Pipe, MemQueue
+from upipe import Processor, Pipe
 
 
 async def main():

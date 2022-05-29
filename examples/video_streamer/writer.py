@@ -1,6 +1,6 @@
 import asyncio
 import cv2
-from upipe import MemQueue, Processor, DataFrame
+from upipe import Process, DataFrame
 
 
 def on_frame(frame: DataFrame):
@@ -13,8 +13,8 @@ def on_frame(frame: DataFrame):
 
 async def main():
     print("Hello writer")
-    proc = Processor("writer")
-    await proc.connect()
+    proc = Process("writer")
+    await proc.join()
     frame_cnt = 0
     while True:
         if frame_cnt == 400:

@@ -1,5 +1,5 @@
 import asyncio
-from upipe import Processor, Pipe, MemQueue
+from upipe import Processor, Pipe
 
 
 async def main():

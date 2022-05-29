@@ -1,14 +1,14 @@
 import asyncio
 from threading import Thread
-from upipe import Processor, Pipe, types
+from upipe import Processor, Process, Pipe, types
 
 LIMIT = 10000
 
 
 async def first():
     print("loading first")
-    me = Processor("first")
-    await me.connect()
+    me = Process("first")
+    await me.join()
     print("first connected")
     while True:
         msg = await me.get()

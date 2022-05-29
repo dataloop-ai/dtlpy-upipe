@@ -196,7 +196,7 @@ class NodeClient:
 
     @property
     def ws_url(self):
-        if self.agent_type.type == UPipeEntityType.PROCESSOR:
+        if self.agent_type.type == UPipeEntityType.PROCESS:
             pid = os.getpid()
             return f"ws://{self.server_base_url}/ws/proc/{pid}"
         if self.agent_type.type == UPipeEntityType.PIPELINE:
@@ -205,16 +205,14 @@ class NodeClient:
     def on_message(self, ws, message):
         self.handle_message(message)
 
-    @staticmethod
-    def on_error(ws, error):
-        print(error)
+    def on_error(self, ws, error):
+        print(f"{self.agent_type.name} : socket error:{error}")
 
-    @staticmethod
-    def on_close(ws, close_status_code, close_msg):
-        print("### closed ###")
+    def on_close(self, ws, close_status_code, close_msg):
+        print(f"{self.agent_type.name} : ### closed ###")
 
     def on_open(self, ws):
-        print(f"{self.agent_id} connected")
+        print(f"{self.agent_id} socket connected")
         self.socket = ws
         self.connected = True
 
@@ -237,16 +235,6 @@ class NodeClient:
             time.sleep(sleep_time)
             if self.connected:
                 return True
-        # start_time = time.time()
-        # sleep_time = .5
-        # self.connected = True
-        # while True:
-        #     if self.connected:
-        #         return True
-        #     elapsed = start_time - time.time()
-        #     if elapsed > timeout:
-        #         raise TimeoutError(f"connect timeout {elapsed} sec")
-        #     await asyncio.sleep(sleep_time)
 
 
 if __name__ == "__main__":

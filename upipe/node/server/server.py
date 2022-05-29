@@ -99,7 +99,7 @@ async def push_q(q: str = Form(...), frame_file: UploadFile = Form(...)):
 async def startup_event():
     print("network ready")
     node.start()
-    print("Server ready")
+    print("Server launched")
     return
 
 

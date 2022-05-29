@@ -9,9 +9,10 @@ import types
 from enum import IntEnum
 from multiprocessing.queues import Queue
 from typing import List, Union
-
+import os
 from fastapi import WebSocket
 
+from . import pid_log
 from ... import entities, utils
 from ... import types as up_types
 from .process_instance import InstanceType, ProcessorInstance, InstanceState
@@ -33,7 +34,8 @@ class StdoutQueue(Queue):
         sys.__stdout__.flush()
 
 
-def launch_module(mode_name, mod_path, function_name, proc_stdout):
+def launch_module(proc_name, mode_name, mod_path, function_name, proc_stdout):
+    os.environ['UPIPE_PROCESS_NAME'] = proc_name
     old_stdout = sys.stdout
     sys.stdout = proc_stdout
     loader = importlib.machinery.SourceFileLoader(mode_name, mod_path)
@@ -113,7 +115,6 @@ class ProcessorController:
             print("Error on instance stats collection")
             print(str(e))
 
-
     def notify_termination(self, pid: int):
         instance = self.get_instance_by_pid(pid)
         if instance:
@@ -141,14 +142,17 @@ class ProcessorController:
             mod_path = self.proc.entry
             mod_function = self.proc.function
             process = multiprocessing.Process(name=f"{mod_name}.{mod_function}", target=launch_module,
-                                              args=(mod_name, mod_path, mod_function, stdout_q))
+                                              args=(self.proc.name, mod_name, mod_path, mod_function, stdout_q))
             process.daemon = True
             process.start()
             instance_type = InstanceType.PROCESS
         else:
-            process = subprocess.Popen([interpreter, self.proc.entry], stdout=subprocess.PIPE)
+            env = os.environ.copy()
+            env['UPIPE_PROCESS_NAME'] = self.proc.name
+            process = subprocess.Popen([interpreter, self.proc.entry], stdout=subprocess.PIPE,env=env)
         runner = ProcessorInstance(self.proc, process, instance_type, stdout_q)
         print(f"{self.proc.name} instance launched, pid: {runner.pid}")
+        pid_log.log_pid(runner.pid, self.proc.name)
         self._instances.append(runner)
 
     # def register_instance(self):

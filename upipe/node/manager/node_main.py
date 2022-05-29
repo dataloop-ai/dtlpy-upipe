@@ -126,7 +126,6 @@ class ComputeNode:
         my_env = os.environ.copy()
         my_env["UPIPE_HOST"] = host
         my_env["UPIPE_PORT"] = str(port)
-        kill_em_all(ComputeNode.server_path, False)
         # init server
         server_process = subprocess.Popen([ComputeNode.interpreter_path, ComputeNode.server_path], env=my_env)
         print(f"Launching new server {server_process.pid}")

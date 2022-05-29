@@ -11,6 +11,11 @@ import asyncio
 
 
 def kill_process(pid):
+    try:
+        pid=int(pid)
+    except ValueError:
+        print(f"Cant kill process, nad pid:{pid}")
+        return
     if pid is None or pid == 0:
         return
     try:

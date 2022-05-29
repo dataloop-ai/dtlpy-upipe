@@ -1,11 +1,11 @@
 import asyncio
-from upipe import MemQueue, Processor
+from upipe import MemQueue, Process
 
 
 async def main():
     print("Hello c")
-    proc = Processor("c")
-    await proc.connect()
+    proc = Process("c")
+    await proc.join()
     while True:
         try:
             counter = await proc.get_sync()

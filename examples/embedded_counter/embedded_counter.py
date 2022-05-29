@@ -1,15 +1,15 @@
 import asyncio
 
-from upipe import Processor, Pipe, DType
+from upipe import Processor, Process, Pipe, DType
 
-limit = 100000
+limit = 10000
 
 
 async def processor_a():
     global limit
     print("Hello embedded processor a")
-    me = Processor("a")
-    await me.connect()
+    me = Process()
+    await me.join()
     print("a connected")
     val = 1
     while True:
@@ -27,8 +27,8 @@ async def processor_a():
 async def processor_b():
     global limit
     print("Hello embedded processor b")
-    proc = Processor("b")
-    await proc.connect()
+    proc = Process()
+    await proc.join()
     while True:
         try:
             counter = await proc.get_sync()

@@ -1,6 +1,7 @@
 import asyncio
-
-from upipe import MemQueue, Processor
+import os.path
+import os
+from upipe import Process
 
 import cv2
 
@@ -10,9 +11,9 @@ async def main():
     print("Hello reader")
     # Create a VideoCapture object and read from input file
     # If the input is the camera, pass 0 instead of the video file name
-    cap = cv2.VideoCapture('sample_640x360.mp4')
-    reader = Processor(name='reader', entry="reader.py")
-    await reader.connect()
+    cap = cv2.VideoCapture(os.path.join("data",'sample_640x360.mp4'))
+    reader = Process(name='reader', entry="reader.py")
+    await reader.join()
     print("reader connected")
     # Check if camera opened successfully
     if not cap.isOpened():

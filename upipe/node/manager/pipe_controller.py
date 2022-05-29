@@ -173,7 +173,10 @@ class PipeController:
                 continue
             launched += 1
             p.launch_instance()
-        print(f"Started {launched} processors")
+        multi = ""
+        if launched > 1:
+            multi = 's'
+        print(f"Started {launched} processor{multi}")
         loop = asyncio.get_event_loop()
         loop.create_task(self.set_pipe_status(PipeExecutionStatus.RUNNING))
 

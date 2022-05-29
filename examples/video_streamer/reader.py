@@ -1,14 +1,14 @@
 import cv2
 import asyncio
-
-from upipe import MemQueue, Processor, DType
+import os
+from upipe import Process, DType
 
 
 async def main():
-    me = Processor("reader")
-    await me.connect()
+    me = Process("reader")
+    await me.join()
     print("a connected")
-    cap = cv2.VideoCapture(r"E:\TypesExamples\surfer.webm")
+    cap = cv2.VideoCapture(os.path.join("data", 'sample_640x360.mp4'))
     i_frame = 0
     while True:
         i_frame += 1

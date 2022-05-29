@@ -1,6 +1,6 @@
 import asyncio
 
-from upipe import Processor, Pipe
+from upipe import Processor,Process, Pipe
 from upipe.types import APIProcSettings
 
 limit = 100000
@@ -8,8 +8,8 @@ limit = 100000
 
 async def plus_plus():
     print("Hello plus_plus")
-    proc = Processor("plus_plus")
-    await proc.connect()
+    proc = Process("plus_plus")
+    await proc.join()
     while True:
         counter = await proc.get()
         proc.processed_counter += 1
@@ -24,7 +24,7 @@ async def main():
     pipe = Pipe('plus-one-pipe')
     pipe.add(a)
     await pipe.load()
-    # await pipe.start()
+    await pipe.start()
     counter = 0
     print("Pending pipe start")
     while True:

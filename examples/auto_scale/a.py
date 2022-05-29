@@ -1,5 +1,5 @@
 import asyncio
-from upipe import MemQueue, Processor, DType
+from upipe import MemQueue, Process, DType
 
 limit = 10000
 
@@ -7,8 +7,8 @@ limit = 10000
 async def main():
     global limit
     print("Hello stressor a")
-    me = Processor("a")
-    await me.connect()
+    me = Process("a")
+    await me.join()
     print("a connected")
     val = 1
     while True:

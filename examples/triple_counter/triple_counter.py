@@ -1,12 +1,12 @@
 import asyncio
 import upipe as up
-from upipe import Processor, Pipe
+from upipe import Processor, Process, Pipe
 
 
 async def a():
     print("Hello a")
-    me = Processor("a")
-    await me.connect()
+    me = Process("a")
+    await me.join()
     print("a connected")
     val = 1
     while True:
@@ -20,8 +20,8 @@ async def a():
 
 async def b():
     print("Hello b")
-    proc = Processor("b")
-    await proc.connect()
+    proc = Process("b")
+    await proc.join()
     while True:
         counter = await proc.get_sync()
         if await proc.emit(counter, up.DType.U32):
@@ -33,8 +33,8 @@ async def b():
 
 async def c():
     print("Hello c")
-    proc = Processor("c")
-    await proc.connect()
+    proc = Process("c")
+    await proc.join()
     while True:
         counter = await proc.get_sync()
         if counter % 10000 == 0:
