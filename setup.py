@@ -29,6 +29,6 @@ setup(name='dataloop-upipe',
       install_requires=requirements,
       python_requires='>=3.8',
       package_data={'upipe': [os.path.relpath(str(p), 'upipe') for p in
-                              pathlib.Path('upipe/node/server/upipe_viewer').rglob('*')]},
+                              pathlib.Path('dataloop/upipe/node/server/upipe_viewer').rglob('*')]},
       include_package_data=True,
       )
