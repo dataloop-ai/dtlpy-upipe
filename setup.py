@@ -18,7 +18,7 @@ packages = [
 ]
 
 setup(name='dataloop-upipe',
-      version='0.1.9',
+      version='0.1.10',
       description='Micro Pipelines for Dataloop platform',
       author='Dataloop Team',
       author_email='info@dataloop.ai',
