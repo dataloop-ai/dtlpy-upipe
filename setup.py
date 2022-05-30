@@ -17,6 +17,12 @@ packages = [
     package for package in find_packages() if package.startswith("dataloop")
 ]
 
+package_data = [os.path.relpath(str(p), 'dataloop') for p in
+                pathlib.Path('dataloop/upipe/node/server/upipe_viewer').rglob('*')]
+
+print('whaaaaaaaaaaaaaaaaaa')
+print(package_data)
+
 setup(name='dataloop-upipe',
       version='0.1.10',
       description='Micro Pipelines for Dataloop platform',
@@ -28,7 +34,6 @@ setup(name='dataloop-upipe',
       setup_requires=['wheel'],
       install_requires=requirements,
       python_requires='>=3.8',
-      package_data={'upipe': [os.path.relpath(str(p), 'upipe') for p in
-                              pathlib.Path('dataloop/upipe/node/server/upipe_viewer').rglob('*')]},
+      package_data={'dataloop': package_data},
       include_package_data=True,
       )
