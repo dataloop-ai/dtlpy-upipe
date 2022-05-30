@@ -1,7 +1,6 @@
 import asyncio
 
-from upipe import Processor,Process, Pipe
-from upipe.types import APIProcSettings
+from dataloop.upipe import Processor, Process, Pipe, types
 
 limit = 100000
 
@@ -20,7 +19,7 @@ async def plus_plus():
 
 
 async def main():
-    a = Processor('plus_plus', func=plus_plus, settings=APIProcSettings(autoscale=8))
+    a = Processor('plus_plus', func=plus_plus, settings=types.APIProcSettings(autoscale=8))
     pipe = Pipe('plus-one-pipe')
     pipe.add(a)
     await pipe.load()

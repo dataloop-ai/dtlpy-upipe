@@ -1,6 +1,6 @@
 import numpy as np
 import asyncio
-from upipe import Processor, Process, Pipe, DType
+from dataloop.upipe import Processor, Process, Pipe, DType
 
 
 class DummyModel:

@@ -1,5 +1,5 @@
 import asyncio
-from upipe import MemQueue, Process, DType
+from dataloop.upipe import Process, DType
 
 limit = 10000
 

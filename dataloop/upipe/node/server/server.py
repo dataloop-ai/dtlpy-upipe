@@ -6,15 +6,14 @@ from fastapi import FastAPI, WebSocket, UploadFile, Form
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from starlette import status
-from starlette.requests import Request
-from upipe.node.server.node_controller import node
-from upipe import types
-from upipe.node.server import view_api
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette import status
+from starlette.requests import Request
 
-from upipe.types.pipe import PipelineAlreadyExist
+from dataloop.upipe import types
+from dataloop.upipe.node.server import view_api
+from dataloop.upipe.node.server.node_controller import node
 
 server_proc_def = types.UPipeEntity(name="upipe-local-server",
                                     id="upipe-local-server",
@@ -80,7 +79,7 @@ async def load_pipe(pipe: types.APIPipe):
     try:
         node.load_pipe(pipe)
         return types.APIResponse(success=True, data=server_proc_def.dict())
-    except PipelineAlreadyExist as e:
+    except types.pipe.PipelineAlreadyExist as e:
         return types.APIResponse(success=False, text=e.message)
     except Exception as e:
         return types.APIResponse(success=False, text=f"Error loading pipe:{str(e)}")

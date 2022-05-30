@@ -1,7 +1,6 @@
 import asyncio
 
-import upipe as up
-from upipe import MemQueue, Process
+from dataloop.upipe import Process, DType
 
 
 async def main():
@@ -11,7 +10,7 @@ async def main():
     print("a connected")
     val = 1
     while True:
-        if await me.emit(val, up.DType.U32):
+        if await me.emit(val, DType.U32):
 
             if val % 10000 == 0:
                 print(f"{val / 1000}K")

@@ -1,5 +1,5 @@
 import asyncio
-from upipe import MemQueue, Process
+from dataloop.upipe import Process
 
 
 async def main():

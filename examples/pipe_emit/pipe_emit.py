@@ -1,6 +1,6 @@
 import asyncio
 from threading import Thread
-from upipe import Processor, Process, Pipe, types
+from dataloop.upipe import Processor, Process, Pipe
 
 LIMIT = 10000
 

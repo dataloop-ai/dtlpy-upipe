@@ -10,8 +10,6 @@ from typing import Dict
 import aiohttp
 import websocket
 from aiohttp import FormData, ClientSession, ServerDisconnectedError
-from .manager import node_main
-from upipe.types import UPipeEntity, UPipeEntityType, parse_message
 from .. import types
 
 counter = 0
@@ -86,7 +84,8 @@ class NodeClient:
     sessions: Dict[str, ClientSession] = {}
     _server_session: ClientSession = None
 
-    def __init__(self, agent_type: UPipeEntity, agent_id: str, message_handler=None, server_base_url='localhost:852'):
+    def __init__(self, agent_type: types.UPipeEntity, agent_id: str, message_handler=None,
+                 server_base_url='localhost:852'):
         self.register_timeout = 5
         self.agent_type = agent_type
         self.agent_id = agent_id
@@ -154,9 +153,9 @@ class NodeClient:
         try:
             json_msg = json.loads(message_str)
             if isinstance(json_msg, list):
-                messages = [parse_message(m) for m in json_msg]
+                messages = [types.parse_message(m) for m in json_msg]
             else:
-                messages = [parse_message(json_msg)]
+                messages = [types.parse_message(json_msg)]
             if self.message_handler:
                 for m in messages:
                     self.message_handler(m)
@@ -196,10 +195,10 @@ class NodeClient:
 
     @property
     def ws_url(self):
-        if self.agent_type.type == UPipeEntityType.PROCESS:
+        if self.agent_type.type == types.UPipeEntityType.PROCESS:
             pid = os.getpid()
             return f"ws://{self.server_base_url}/ws/proc/{pid}"
-        if self.agent_type.type == UPipeEntityType.PIPELINE:
+        if self.agent_type.type == types.UPipeEntityType.PIPELINE:
             return f"ws://{self.server_base_url}/ws/pipe/{self.agent_id}"
 
     def on_message(self, ws, message):

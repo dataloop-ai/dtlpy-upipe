@@ -3,7 +3,7 @@ import logging
 import sys
 import time
 
-from upipe import Process
+from dataloop.upipe import Process
 
 logging.basicConfig(level=logging.DEBUG, format='%(process)d - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("writer")

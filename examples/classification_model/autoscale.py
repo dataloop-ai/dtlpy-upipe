@@ -1,11 +1,10 @@
 import asyncio
-import upipe.types
-from upipe import Processor, Pipe
+from dataloop.upipe import Processor, Pipe, types
 
 
 async def main():
     a = Processor('reader', entry="reader.py")
-    b = Processor('classifier', entry="classifier.py", settings=upipe.types.APIProcSettings(autoscale=1))
+    b = Processor('classifier', entry="classifier.py", settings=types.APIProcSettings(autoscale=1))
     pipe = Pipe('classification')
     pipe.add(a).add(b)
     await pipe.start()

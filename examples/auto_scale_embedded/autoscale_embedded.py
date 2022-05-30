@@ -2,7 +2,7 @@ import asyncio
 import random
 import string
 
-from upipe import Processor, Pipe, DType
+from dataloop.upipe import Process, Processor, Pipe, DType
 import hashlib
 
 limit = 10000
@@ -11,8 +11,8 @@ limit = 10000
 async def processor_a():
     global limit
     print("Hello embedded processor a")
-    me = Processor("a")
-    await me.connect()
+    me = Process("a")
+    await me.join()
     print("a connected")
     val = 1
     while True:
@@ -28,10 +28,8 @@ async def processor_a():
 async def processor_b():
     global limit
     print("Hello sha processor b")
-    proc = Processor("b")
-    await proc.connect()
-    proc.start()
-    counter = 0
+    proc = Process("b")
+    await proc.join()
     while True:
         try:
             counter = await proc.get_sync()

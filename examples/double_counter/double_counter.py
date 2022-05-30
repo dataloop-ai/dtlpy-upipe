@@ -1,6 +1,6 @@
 import asyncio
 
-from upipe import Processor, Pipe
+from dataloop. upipe import Processor, Pipe
 
 
 async def main():

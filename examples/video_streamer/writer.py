@@ -1,6 +1,6 @@
 import asyncio
 import cv2
-from upipe import Process, DataFrame
+from dataloop.upipe import Process, DataFrame
 
 
 def on_frame(frame: DataFrame):

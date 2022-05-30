@@ -1,12 +1,11 @@
 import asyncio
-import upipe.types
-from upipe import Processor, Pipe
+from dataloop import upipe
 
 
 async def main():
-    a = Processor('a', entry="a.py")
-    b = Processor('b', entry="b.py", settings=upipe.types.APIProcSettings(autoscale=8))
-    pipe = Pipe('plus-one')
+    a = upipe.Processor('a', entry="a.py")
+    b = upipe.Processor('b', entry="b.py", settings=upipe.types.APIProcSettings(autoscale=8))
+    pipe = upipe.Pipe('plus-one')
     pipe.add(a).add(b)
     await pipe.start()
     await pipe.wait_for_completion()

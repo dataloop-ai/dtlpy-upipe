@@ -1,23 +1,9 @@
 #! /usr/bin/env python3
-# This file is part of DTLPY.
-#
-# MICROPIPELINES is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# MICROPIPELINES is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with MICROPIPELINES.  If not, see <http://www.gnu.org/licenses/>.
+# This file is part of Dataloop
 
 from setuptools import setup, find_packages
 import pathlib
 import os
-
 
 with open('README.md') as f:
     readme = f.read()
@@ -27,19 +13,22 @@ with open('LICENSE') as f:
 
 with open('requirements.txt') as f:
     requirements = f.read()
+packages = [
+    package for package in find_packages() if package.startswith("dataloop")
+]
 
-setup(name='micropipelines',
+setup(name='dataloop-upipe',
       version='0.1.9',
       description='Micro Pipelines for Dataloop platform',
-      author='Eran Shlomo',
-      author_email='eran@dataloop.ai',
-      license='Apache License 2.0',
+      author='Dataloop Team',
+      author_email='info@dataloop.ai',
       long_description=readme,
       long_description_content_type='text/markdown',
       packages=find_packages(),
       setup_requires=['wheel'],
       install_requires=requirements,
       python_requires='>=3.8',
-      package_data={'upipe': [os.path.relpath(str(p), 'upipe') for p in pathlib.Path('upipe/node/server/upipe_viewer').rglob('*')]},
+      package_data={'upipe': [os.path.relpath(str(p), 'upipe') for p in
+                              pathlib.Path('upipe/node/server/upipe_viewer').rglob('*')]},
       include_package_data=True,
       )

@@ -3,7 +3,7 @@ from threading import Thread
 import time
 import cv2
 
-from upipe import Process
+from dataloop.upipe import Process
 
 counter = 0
 display_frame = None

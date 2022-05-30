@@ -1,6 +1,6 @@
 import asyncio
-import upipe as up
-from upipe import Processor, Process, Pipe
+
+from dataloop.upipe import Processor, Process, Pipe, DType
 
 
 async def a():
@@ -10,7 +10,7 @@ async def a():
     print("a connected")
     val = 1
     while True:
-        if await me.emit(val, up.DType.U32):
+        if await me.emit(val, DType.U32):
             if val % 10000 == 0:
                 print(f"{val / 1000}K")
             if val == 100000:
@@ -24,7 +24,7 @@ async def b():
     await proc.join()
     while True:
         counter = await proc.get_sync()
-        if await proc.emit(counter, up.DType.U32):
+        if await proc.emit(counter, DType.U32):
             if counter % 10000 == 0:
                 print(f"{counter / 1000}K")
             if counter == 100000:

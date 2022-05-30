@@ -1,6 +1,6 @@
 import asyncio
 
-from upipe import Processor, Process, Pipe, DType
+from dataloop.upipe import Processor, Process, Pipe, DType
 
 limit = 10000
 

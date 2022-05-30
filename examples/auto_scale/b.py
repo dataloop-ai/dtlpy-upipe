@@ -3,7 +3,7 @@ import hashlib
 import string
 import random
 
-from upipe import MemQueue, Processor, DType
+from dataloop.upipe import Process
 
 limit = 10000
 
@@ -11,8 +11,8 @@ limit = 10000
 async def main():
     global limit
     print("Hello sha processor b")
-    proc = Processor("b")
-    await proc.connect()
+    proc = Process("b")
+    await proc.join()
     counter = 0
     while True:
         try:

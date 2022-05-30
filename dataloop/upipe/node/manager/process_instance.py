@@ -10,7 +10,7 @@ from colorama import Fore, Back, Style
 from fastapi import WebSocket
 from starlette.websockets import WebSocketDisconnect
 
-from upipe.types import UPipeEntityType, UPipeMessage, UPipeMessageType, parse_message, APIProcessor, \
+from ...types import UPipeEntityType, UPipeMessage, UPipeMessageType, parse_message, APIProcessor, \
     ProcessStatsMessage, ProcessPerformanceStats
 
 

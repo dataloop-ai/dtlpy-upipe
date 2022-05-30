@@ -1,12 +1,11 @@
 import asyncio
-import upipe.types
-from upipe import Processor, Pipe
+from dataloop.upipe import Processor, Pipe, types
 
 
 async def main():
     print("Hello pipe")
     reader = Processor('reader', entry='reader.py')
-    writer = Processor('writer', entry='writer.py', settings=upipe.types.APIProcSettings(host="localhost"))
+    writer = Processor('writer', entry='writer.py', settings=types.APIProcSettings(host="localhost"))
     pipe = Pipe('streamer')
     pipe.add(reader).add(writer)
     await pipe.start()

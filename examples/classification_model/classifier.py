@@ -1,10 +1,11 @@
-import asyncio
 import torch
-from upipe import Processor
 import torchvision.models as models
+import asyncio
 import logging
 import cv2
 import time
+
+from dataloop.upipe import Process
 
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s - %(process)d - %(name)s - %(levelname)s - %(message)s',
@@ -23,9 +24,8 @@ inception.eval()
 
 async def main():
     logger.info("Hello classifier processor")
-    proc = Processor("classifier")
-    await proc.connect()
-    # proc.start()
+    proc = Process("classifier")
+    await proc.join()
     counter = 0
     tic = time.time()
     while True:

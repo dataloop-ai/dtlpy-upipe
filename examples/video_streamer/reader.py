@@ -1,7 +1,7 @@
 import cv2
 import asyncio
 import os
-from upipe import Process, DType
+from dataloop.upipe import Process, DType
 
 
 async def main():

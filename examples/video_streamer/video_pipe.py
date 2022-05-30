@@ -1,6 +1,6 @@
 import asyncio
 
-import upipe as up
+import dataloop.upipe as up
 
 
 async def main():

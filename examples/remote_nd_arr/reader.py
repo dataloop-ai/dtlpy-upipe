@@ -3,7 +3,7 @@ import logging
 
 import numpy as np
 
-from upipe import Process, DType
+from dataloop.upipe import Process, DType
 
 logging.basicConfig(level=logging.DEBUG, format='%(process)d - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("reader")
