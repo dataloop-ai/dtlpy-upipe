@@ -1,11 +1,11 @@
 import cv2
 import asyncio
 import os
-from dataloop.upipe import Process, DType
+from dataloop.upipe import Worker, DType
 
 
 async def main():
-    me = Process("reader")
+    me = Worker("reader")
     await me.join()
     print("a connected")
     cap = cv2.VideoCapture(os.path.join("data", 'sample_640x360.mp4'))

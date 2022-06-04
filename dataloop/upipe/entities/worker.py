@@ -25,7 +25,7 @@ class ProcessorExecutionStatus(IntEnum):
     RUNNING = 3
 
 
-class Process:
+class Worker:
     ...
     next_serial = 0
     in_qs: List[entities.MemQueue]
@@ -84,7 +84,7 @@ class Process:
         self.interpreter = sys.executable
         self.request_termination = False  # called from manager to notify its over
         self.type = types.UPipeEntityType.PROCESS
-        self.node_client = node.NodeClient(self.process_def, self.id, self._on_ws_message)
+        self.node_client = node.NodeClient(self.worker_def, self.id, self._on_ws_message)
         self.current_pipe_execution_id = None
         atexit.register(self._cleanup)
 
@@ -111,7 +111,7 @@ class Process:
         printed = False
         while True:
             try:
-                (data, messages) = await self.node_client.register_proc(self.process_def)
+                (data, messages) = await self.node_client.register_proc(self.worker_def)
                 break
             except ClientConnectorError:
                 if not printed:
@@ -163,7 +163,7 @@ class Process:
             try:
                 time.sleep(1)
                 self._calc_dfps()
-                msg = types.ProcessStatsMessage(dest=self.process_def.id,
+                msg = types.ProcessStatsMessage(dest=self.worker_def.id,
                                                 type=types.UPipeMessageType.PROCESS_STATUS,
                                                 sender=self.id,
                                                 scope=types.UPipeEntityType.PROCESSOR,
@@ -313,7 +313,7 @@ class Process:
             await asyncio.sleep(sleep_time)
 
     async def terminate(self):
-        (data, messages) = await self.node_client.notify_termination(self.process_def)
+        (data, messages) = await self.node_client.notify_termination(self.worker_def)
         sys.exit(0)
 
     @property
@@ -334,8 +334,8 @@ class Process:
         return sys.argv[0]
 
     @property
-    def process_def(self):
-        return types.APIProcess(id=self.id,
-                                name=self.name,
-                                instance_id=self.instance_id,
-                                pid=self.pid)
+    def worker_def(self):
+        return types.APIWorker(id=self.id,
+                               name=self.name,
+                               instance_id=self.instance_id,
+                               pid=self.pid)

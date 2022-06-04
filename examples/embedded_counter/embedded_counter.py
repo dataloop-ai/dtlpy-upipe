@@ -1,6 +1,6 @@
 import asyncio
 
-from dataloop.upipe import Processor, Process, Pipe, DType
+from dataloop.upipe import Processor, Worker, Pipe, DType
 
 limit = 10000
 
@@ -8,7 +8,7 @@ limit = 10000
 async def processor_a():
     global limit
     print("Hello embedded processor a")
-    me = Process()
+    me = Worker()
     await me.join()
     print("a connected")
     val = 1
@@ -27,7 +27,7 @@ async def processor_a():
 async def processor_b():
     global limit
     print("Hello embedded processor b")
-    proc = Process()
+    proc = Worker()
     await proc.join()
     while True:
         try:

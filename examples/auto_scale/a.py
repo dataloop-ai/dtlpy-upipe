@@ -1,5 +1,5 @@
 import asyncio
-from dataloop.upipe import Process, DType
+from dataloop.upipe import Worker, DType
 
 limit = 10000
 
@@ -7,7 +7,7 @@ limit = 10000
 async def main():
     global limit
     print("Hello stressor a")
-    me = Process("a")
+    me = Worker("a")
     await me.join()
     print("a connected")
     val = 1

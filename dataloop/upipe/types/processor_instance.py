@@ -22,7 +22,7 @@ class APIProcessorInstance(UPipeEntity):
     pid: str
 
 
-class APIProcess(APIProcessor):
+class APIWorker(APIProcessor):
     instance_id: int
     pid: Optional[int]
     type: UPipeEntityType = UPipeEntityType.PROCESS

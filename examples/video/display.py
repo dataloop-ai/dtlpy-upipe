@@ -3,7 +3,7 @@ from threading import Thread
 import time
 import cv2
 
-from dataloop.upipe import Process
+from dataloop.upipe import Worker
 
 counter = 0
 display_frame = None
@@ -30,7 +30,7 @@ async def main():
     global display_frame
     print("Hello display")
 
-    proc = Process(name='display', entry='display.py')
+    proc = Worker(name='display', entry='display.py')
     await proc.join()
     print("started")
     frame_cnt = 0

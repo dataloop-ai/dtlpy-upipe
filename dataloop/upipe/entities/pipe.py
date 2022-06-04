@@ -3,7 +3,7 @@ import time
 from typing import Dict
 
 from .processor import Processor
-from .process import Process
+from .worker import Worker
 from .. import types, node, entities
 from ..types import APIQueue, SINK_QUEUE_ID, UPipeMessage
 
@@ -17,11 +17,11 @@ class PipeFrameFuture(asyncio.Future):
         self.timeout_ms = timeout_ms
 
 
-class Pipe(Processor, Process):
+class Pipe(Processor, Worker):
 
     def __init__(self, name):
         Processor.__init__(self, name)
-        Process.__init__(self, name)
+        Worker.__init__(self, name)
         self.type = types.UPipeEntityType.PIPELINE
         self.node_client = node.NodeClient(self.processor_def, name, self._on_ws_message)
         self._completion_future: asyncio.Future = asyncio.Future()
@@ -30,7 +30,7 @@ class Pipe(Processor, Process):
         self.status: types.PipeExecutionStatus = types.PipeExecutionStatus.INIT
         self.sink_q = entities.MemQueue(self.pipe_def.sink)
         self.executing_frames: Dict[str, PipeFrameFuture] = dict()
-        self.process = Process(name=self.name)
+        self.process = Worker(name=self.name)
         self.out_qs = []
         self.out_qs_defs = []
         self.loaded = False

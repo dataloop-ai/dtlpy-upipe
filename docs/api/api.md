@@ -68,23 +68,23 @@ The processor configuration allows the processor to share initial data with its 
 
 <i>processor_def</i> : the API entity of the processor object
 
-###Process
-Process is any piece of code with no specific limitation on it. anywhere in the code you can instantiate a reference to the current running process in order to :read config, receive data and emit data. the _Process_ class allows this communication
+###Worker
+Worker is any piece of code with no specific limitation on it. anywhere in the code you can instantiate a reference to the current running process in order to :read config, receive data and emit data. the _Worker_ class allows this communication
 
-The process can be instantiated with the same name of its launch processor, this is explicit naming.
-
-    me = Process("the_processor_name") 
-
+The worker can be instantiated with the same name of its launch processor, this is explicit naming.
+```python
+    me = Worker("the_processor_name") 
+```
 by default uPipe **automatically** assigned the processes the name to launched process using the environment variable UPIPE_PROCESS_NAME
 
 **Note:explicit naming will take priority over the environment variables**
-    
-    me = Process() # name is taken from os.environ['UPIPE_PROCESS_NAME']
+```python    
+    me = Worker() # name is taken from os.environ['UPIPE_PROCESS_NAME']
     await me.join()
+```
+####<u>Worker methods</u>
 
-####<u>Processor methods</u>
-
-<i>join()</i> : Notify uPipe this process is joining the processing pool, join must be called before any data operation 
+<i>join()</i> : Notify uPipe this worker is joining the processing pool, join must be called before any data operation 
 
 <i>emit(data:DataFrame | data , d_type: entities.DType = None)</i> : 
 
@@ -105,22 +105,22 @@ just like emit, but waits for queue to be available.
 
 <i>get_stats</i> : Get this processor performance metrics, see [Performance monitoring]() for more details 
 
-####<u>Process properties</u>
+####<u>Worker properties</u>
 
+```properties
+config_hash : unique hash string of the config
 
-<i>config_hash</i> : unique hash string of the config
+id : the unique id of the worker
 
-<i>id</i> : the unique id of the process
+executable : the executable script of the worker
 
-<i>executable</i> : the executable script of the process
-
-<i>process_def</i> : the API entity of the process object
-
+process_def : the API entity of the worker object
+```
 ###Pipe
 
-Pipe is both processor and a process
+Pipe is both processor and a worker
 * The Pipe is the root Processor of the processing tree and support all processor methods. 
-* The Pipe is also a Process, what allows it to _emit_ data into the processing tree. 
+* The Pipe is also a Worker, what allows it to _emit_ data into the processing tree. 
 * get/get_sync are not defined on the Pipe
 
 The Pipe is instantiated with a name, that is required to be unique among all Processors.
@@ -145,7 +145,7 @@ Processors are [_chained_](https://en.wikipedia.org/wiki/Method_chaining) using 
 ####<u>Pipe properties</u>
 
 
-<i>id</i> : the unique id of the process
+<i>id</i> : the unique id of the pipe
 
 <i>running</i> : Boolean, indicating the pipe is currently executing
 

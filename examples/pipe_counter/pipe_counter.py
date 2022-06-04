@@ -1,13 +1,13 @@
 import asyncio
 
-from dataloop.upipe import Processor, Process, Pipe
+from dataloop.upipe import Processor, Worker, Pipe
 
 limit = 100000
 
 
 async def plus_plus():
     print("Hello plus_plus")
-    proc = Process("plus_plus_processor")
+    proc = Worker("plus_plus_processor")
     await proc.join()
     while True:
         counter = await proc.get()

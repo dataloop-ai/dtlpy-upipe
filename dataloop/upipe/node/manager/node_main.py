@@ -100,8 +100,8 @@ class ComputeNode:
                 pipe.notify_termination(pid, proc)
 
     def register_launched_instance(self, pid: int, proc: types.UPipeEntity):
-        from .. import ProcessorInstance  # TODO, circular dependency to resolve
-        launched_processor: Union[ProcessorInstance, None] = None
+        from .. import WorkerController  # TODO, circular dependency to resolve
+        launched_processor: Union[WorkerController, None] = None
         for p in self.pipe_controllers:
             pipe: PipeController = self.pipe_controllers[p]
             instance = pipe.get_instance_by_pid(pid)

@@ -15,7 +15,7 @@ from fastapi import WebSocket
 from . import pid_log
 from ... import entities, utils
 from ... import types as up_types
-from .process_instance import InstanceType, ProcessorInstance, InstanceState
+from .worker_controller import InstanceType, WorkerController, InstanceState
 
 # This is a Queue that behaves like stdout
 from ...types.performance import ProcessorPerformanceStats
@@ -65,7 +65,7 @@ class ProcessorController:
 
     def __init__(self, proc: up_types.APIProcessor, queues: [entities.MemQueue]):
         self.proc: up_types.APIProcessor = proc
-        self._instances: List[ProcessorInstance] = []
+        self._instances: List[WorkerController] = []
         self._interpreter_path = sys.executable
         self.status: up_types.ProcessorExecutionStatus = up_types.ProcessorExecutionStatus.INIT
         self._queues: [entities.MemQueue] = queues
@@ -94,7 +94,7 @@ class ProcessorController:
     def pause(self):
         pass
 
-    def get_instance_by_pid(self, pid: int) -> Union[ProcessorInstance, None]:
+    def get_instance_by_pid(self, pid: int) -> Union[WorkerController, None]:
         for i in self.instances:
             if i.pid == pid:
                 return i
@@ -150,7 +150,7 @@ class ProcessorController:
             env = os.environ.copy()
             env['UPIPE_PROCESS_NAME'] = self.proc.name
             process = subprocess.Popen([interpreter, self.proc.entry], stdout=subprocess.PIPE,env=env)
-        runner = ProcessorInstance(self.proc, process, instance_type, stdout_q)
+        runner = WorkerController(self.proc, process, instance_type, stdout_q)
         print(f"{self.proc.name} instance launched, pid: {runner.pid}")
         pid_log.log_pid(runner.pid, self.proc.name)
         self._instances.append(runner)

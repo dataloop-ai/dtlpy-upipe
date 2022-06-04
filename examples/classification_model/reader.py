@@ -1,6 +1,6 @@
 import torchvision.datasets
 import asyncio
-from dataloop.upipe import Process, Processor, DType
+from dataloop.upipe import Worker, Processor, DType
 import numpy as np
 import logging
 import time
@@ -20,7 +20,7 @@ testset = torchvision.datasets.CIFAR10(root='./data',
 async def main():
     global limit
     logger.info("Hello stressor reader")
-    me = Process("reader")
+    me = Worker("reader")
     await me.join()
     logger.info("reader connected")
     pass_counter = 0

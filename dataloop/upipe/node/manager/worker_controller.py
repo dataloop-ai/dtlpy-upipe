@@ -28,7 +28,7 @@ class InstanceState(IntEnum):
     PENDING_TERMINATION = 6
 
 
-class ProcessorInstance:
+class WorkerController:
     colors = [(Fore.WHITE, Back.BLACK), (Fore.RED, Back.GREEN), (Fore.BLUE, Back.WHITE), (Fore.BLACK, Back.BLUE),
               (Fore.RED, Back.WHITE),
               ]
@@ -40,14 +40,14 @@ class ProcessorInstance:
         self.running_process = None
         self.instance_type = instance_type
         self.stdout_q = stdout_q
-        self.color_index = ProcessorInstance.next_color_index
+        self.color_index = WorkerController.next_color_index
         self.state = InstanceState.LAUNCHED
         self.connection: Union[None, WebSocket] = None
         self.msg_counter = 0
         self.stats: Union[None, ProcessPerformanceStats] = None
-        ProcessorInstance.next_color_index += 1
-        if ProcessorInstance.next_color_index >= len(self.colors):
-            ProcessorInstance.next_color_index = 0
+        WorkerController.next_color_index += 1
+        if WorkerController.next_color_index >= len(self.colors):
+            WorkerController.next_color_index = 0
         thread = Thread(target=self.monitor, daemon=True)
         thread.start()
 

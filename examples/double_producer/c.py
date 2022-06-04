@@ -1,10 +1,10 @@
 import asyncio
-from dataloop.upipe import Process
+from dataloop.upipe import Worker
 
 
 async def main():
     print("Hello c")
-    proc = Process("c")
+    proc = Worker("c")
     await proc.join()
     counter = 0
     while True:

@@ -1,11 +1,11 @@
 import asyncio
 
-from dataloop.upipe import Processor, Process, Pipe, DType
+from dataloop.upipe import Processor, Worker, Pipe, DType
 
 
 async def a():
     print("Hello a")
-    me = Process("a")
+    me = Worker("a")
     await me.join()
     print("a connected")
     val = 1
@@ -20,7 +20,7 @@ async def a():
 
 async def b():
     print("Hello b")
-    proc = Process("b")
+    proc = Worker("b")
     await proc.join()
     while True:
         counter = await proc.get_sync()
@@ -33,7 +33,7 @@ async def b():
 
 async def c():
     print("Hello c")
-    proc = Process("c")
+    proc = Worker("c")
     await proc.join()
     while True:
         counter = await proc.get_sync()

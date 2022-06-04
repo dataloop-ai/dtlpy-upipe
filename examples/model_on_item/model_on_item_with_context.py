@@ -1,6 +1,6 @@
 import numpy as np
 import asyncio
-from dataloop.upipe import Processor, Process, Pipe, DType
+from dataloop.upipe import Processor, Worker, Pipe, DType
 
 
 class DummyModel:
@@ -10,7 +10,7 @@ class DummyModel:
 
 async def get_item():
     print("loading get_item")
-    me = Process("get_item")
+    me = Worker("get_item")
     await me.join()
     print("get_item connected")
     while True:
@@ -24,7 +24,7 @@ async def get_item():
 
 async def age_detection():
     print("loading age detector")
-    me = Process("age_detection")
+    me = Worker("age_detection")
     await me.join()
     print("age_detection connected")
     age_detector = DummyModel()
@@ -39,7 +39,7 @@ async def age_detection():
 
 async def nude_net():
     print("Hello nude_net")
-    me = Process("nude_net")
+    me = Worker("nude_net")
     await me.join()
     nude_net_module = DummyModel()
     while True:

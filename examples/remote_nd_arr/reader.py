@@ -3,7 +3,7 @@ import logging
 
 import numpy as np
 
-from dataloop.upipe import Process, DType
+from dataloop.upipe import Worker, DType
 
 logging.basicConfig(level=logging.DEBUG, format='%(process)d - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("reader")
@@ -11,7 +11,7 @@ logger = logging.getLogger("reader")
 
 async def main():
     logger.info("Hello reader")
-    me = Process("reader")
+    me = Worker("reader")
     await me.join()
     logger.info("reader starter")
 

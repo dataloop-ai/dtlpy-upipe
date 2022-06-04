@@ -48,14 +48,15 @@ The basics entities:
 * DataFrame: Arbitrary binary data that is shared between processors.
 * Processor: A python code that can receive, process and generate(emit) data frames. Processor is a logical entities
   that can encapsulate many (os) processes of the same processor code.
+* Queue: Two processors will communicate DataFrames using queue, usually memory based queue.  
 * Pipe: The Pipeline the defines the data flow between Processors and manages the processing execution.
 
 ### Read more ###
 
 * [uPipe basics](docs/basics/basics.md)
 * [uPipe API](docs/api/api.md)
-* uPipe architecture
-* uPipe design
+* [uPipe architecture](docs/architecture/architecture.md)
+* [uPipe design](docs/design/design.md)
 
 ### Install ###
 
@@ -89,18 +90,18 @@ pipe.add(a).add(b) #a,b are processors
 
 ### Joining a Processor to a pipe###
 
-This code is declaring the Processors code and _join_ in order to be able to receive and emit data frames.
+This code is declaring the Worker's code and _join_ in order to be able to receive and emit data frames.
 
 ```python
-proc = Processor("b")
+proc = Worker("b")
 await proc.join()
 # Processor is now ready to ingest and emit data 
 ```
 ### Acquiring data by processor ###
 
-Processor can get data using the _get_  and _get_sync_ methods
+Worker can get data using the _get_  and _get_sync_ methods
 ```python
-proc = Processor("b")
+proc = Worker("b")
 await proc.join()
 # Processor is now ready to ingest and emit data 
 #get data frame, return None if no data available 
@@ -110,9 +111,9 @@ data_frame = await proc.get_sync()
 ```
 ### Emitting data by processor ###
 
-Processor can emit data frame for the next Processor in Pipe using the _emit_  and _emit_sync_ methods
+Worker can emit data frame for the next Processor in Pipe using the _emit_  and _emit_sync_ methods
 ```python
-proc = Processor("b")
+proc = Worker("b")
 await proc.join()
 # Processor is now ready to ingest and emit data 
 #emit data frame, return None if no space (back pressure from next processor) 

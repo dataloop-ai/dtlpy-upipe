@@ -1,11 +1,11 @@
 import asyncio
 
-from dataloop.upipe import Process, DType
+from dataloop.upipe import Worker, DType
 
 
 async def main():
     print("Hello a")
-    me = Process("a")
+    me = Worker("a")
     await me.join()
     print("a connected")
     val = 1

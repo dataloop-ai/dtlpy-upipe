@@ -1,13 +1,13 @@
 import asyncio
 from threading import Thread
-from dataloop.upipe import Processor, Process, Pipe
+from dataloop.upipe import Processor, Worker, Pipe
 
 LIMIT = 10000
 
 
 async def first():
     print("loading first")
-    me = Process("first")
+    me = Worker("first")
     await me.join()
     print("first connected")
     while True:

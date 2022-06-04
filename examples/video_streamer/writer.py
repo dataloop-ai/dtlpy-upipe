@@ -1,6 +1,6 @@
 import asyncio
 import cv2
-from dataloop.upipe import Process, DataFrame
+from dataloop.upipe import Worker, DataFrame
 
 
 def on_frame(frame: DataFrame):
@@ -13,7 +13,7 @@ def on_frame(frame: DataFrame):
 
 async def main():
     print("Hello writer")
-    proc = Process("writer")
+    proc = Worker("writer")
     await proc.join()
     frame_cnt = 0
     while True:

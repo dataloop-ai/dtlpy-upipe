@@ -9,7 +9,7 @@ from .performance import QueuePerformanceStats
 from .pipe import APIPipe, APIPipeControlMessage, APIPipeStatusMessage
 from .node import APINode
 from .processor import APIProcessor
-from .processor_instance import APIProcessorInstance, APIProcess
+from .processor_instance import APIProcessorInstance, APIWorker
 from .http_api import APIResponse
 
 
@@ -19,7 +19,7 @@ class UpipeEntities(BaseModel):
     pipe: APIPipe
     processors: List[APIProcessor]
     processors_instances: List[APIProcessorInstance]
-    processes: List[APIProcess]
+    processes: List[APIWorker]
     response: APIResponse
     entity_type: UPipeEntityType
     control_message: APIPipeControlMessage

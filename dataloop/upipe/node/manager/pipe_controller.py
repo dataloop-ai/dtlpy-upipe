@@ -9,7 +9,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from .node_utils import WebsocketHandler
 from ... import types, entities
-from .processor_controller import ProcessorController, ProcessorInstance
+from .processor_controller import ProcessorController, WorkerController
 from ...types import PipeExecutionStatus, APIProcessor, APIQueue
 
 
@@ -311,11 +311,11 @@ class PipeController:
         if control_msg.action == types.PipeActionType.TERMINATE:
             return self.request_termination()
 
-    def remove_instance(self, instance: ProcessorInstance):
+    def remove_instance(self, instance: WorkerController):
         p = self.processors[instance.proc.id]
         p.instances.remove(instance)
 
-    def handle_instance_exit(self, instance: ProcessorInstance):
+    def handle_instance_exit(self, instance: WorkerController):
         p = self.processors[instance.proc_id]
         if instance.exit_code == 0:
             print(f"{instance.proc_id}({instance.pid}) >> ************Completed**************")

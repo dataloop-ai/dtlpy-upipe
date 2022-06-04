@@ -3,7 +3,7 @@ import hashlib
 import string
 import random
 
-from dataloop.upipe import Process
+from dataloop.upipe import Worker
 
 limit = 10000
 
@@ -11,7 +11,7 @@ limit = 10000
 async def main():
     global limit
     print("Hello sha processor b")
-    proc = Process("b")
+    proc = Worker("b")
     await proc.join()
     counter = 0
     while True:

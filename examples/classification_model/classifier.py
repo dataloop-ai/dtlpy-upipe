@@ -5,7 +5,7 @@ import logging
 import cv2
 import time
 
-from dataloop.upipe import Process
+from dataloop.upipe import Worker
 
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s - %(process)d - %(name)s - %(levelname)s - %(message)s',
@@ -24,7 +24,7 @@ inception.eval()
 
 async def main():
     logger.info("Hello classifier processor")
-    proc = Process("classifier")
+    proc = Worker("classifier")
     await proc.join()
     counter = 0
     tic = time.time()

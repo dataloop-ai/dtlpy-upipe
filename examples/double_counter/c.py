@@ -1,10 +1,10 @@
 import asyncio
-from dataloop.upipe import MemQueue, Process
+from dataloop.upipe import MemQueue, Worker
 
 
 async def main():
     print("Hello c")
-    proc = Process("c")
+    proc = Worker("c")
     await proc.join()
     while True:
         try:

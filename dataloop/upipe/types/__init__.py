@@ -8,7 +8,7 @@ from .pipe import UPipeEntity, APIPipe, SINK_QUEUE_ID, APIPipeControlMessage, Pi
 from .processor import APIProcSettings, APIProcessor, ProcessorExecutionStatus
 from .mem_queue import APIQueue, APIProcQueues
 from .message_parser import APIPipeStatusMessage, parse_pipe_message
-from .processor_instance import APIProcessorInstance, APIProcess, APIInstanceActionMessage, ProcessorExecutionStatus, \
+from .processor_instance import APIProcessorInstance, APIWorker, APIInstanceActionMessage, ProcessorExecutionStatus, \
     ProcessStatsMessage
 
 

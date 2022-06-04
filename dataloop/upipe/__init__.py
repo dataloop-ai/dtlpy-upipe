@@ -1,7 +1,7 @@
 from .__version__ import version as __version__
 from . import types
 from . import node
-from .entities import DataFrame, MemQueue, Processor, Process, Pipe, DType
+from .entities import DataFrame, MemQueue, Processor, Worker, Pipe, DType
 
 
 def debugger():

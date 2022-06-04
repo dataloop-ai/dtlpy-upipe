@@ -3,7 +3,7 @@ import logging
 import sys
 import time
 
-from dataloop.upipe import Process
+from dataloop.upipe import Worker
 
 logging.basicConfig(level=logging.DEBUG, format='%(process)d - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("writer")
@@ -11,7 +11,7 @@ logger = logging.getLogger("writer")
 
 async def main():
     logger.info("Hello writer")
-    proc = Process("writer")
+    proc = Worker("writer")
     await proc.join()
     logger.info("writer started")
     first = True

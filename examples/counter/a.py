@@ -1,10 +1,10 @@
 import asyncio
-from dataloop.upipe import MemQueue, Process
+from dataloop.upipe import MemQueue, Worker
 
 
 async def main():
     print("Hello a")
-    me = Process("a")
+    me = Worker("a")
     await me.join()
     limit = me.config['limit']
     print("a connected")
