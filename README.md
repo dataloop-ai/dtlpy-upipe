@@ -1,4 +1,6 @@
 # uPipe #
+[![pypi](https://img.shields.io/pypi/v/dataloop-upipe.svg)](https://pypi.org/project/dataloop-upipe/)
+[![versions](https://img.shields.io/pypi/pyversions/dataloop-upipe.svg)](https://github.com/dataloop-ai/dtlpy-upipe)
 
 Micro-pipe is asyncio based framework for running **simple**,high performance, parallel and synchronized python
 processes within a single machine.  

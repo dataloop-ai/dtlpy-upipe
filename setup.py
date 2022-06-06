@@ -8,9 +8,6 @@ import os
 with open('README.md') as f:
     readme = f.read()
 
-with open('LICENSE') as f:
-    license_ = f.read()
-
 with open('requirements.txt') as f:
     requirements = f.read()
 packages = [
@@ -20,10 +17,11 @@ packages = [
 package_data = [os.path.relpath(str(p), 'dataloop') for p in
                 pathlib.Path('dataloop/upipe/node/server/upipe_viewer').rglob('*')]
 
-print('whaaaaaaaaaaaaaaaaaa')
-print(package_data)
-
 setup(name='dataloop-upipe',
+      classifiers=[
+          'Programming Language :: Python :: 3.8',
+          'Programming Language :: Python :: 3.9',
+      ],
       version='0.1.10',
       description='Micro Pipelines for Dataloop platform',
       author='Dataloop Team',
